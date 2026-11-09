@@ -181,6 +181,21 @@ Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifi
 - Impacto en el documento: una oración en "Respaldo › Código fuente" y la referencia
   "Preston-Werner, T. (s.f.). *Versionado semántico 2.0.0*. https://semver.org/lang/es/".
 
+### D-21 · Repositorio público desde la entrega (Cambio · Aprobada el 09/11/2026 · Sprint 4)
+- Documento: dice que el código se guarda en un repositorio privado de GitHub (Arquitectura y Respaldo › Código fuente).
+- Decisión: el repositorio es privado durante el desarrollo y pasa a público en la entrega.
+- Motivo: la cátedra pide el código compartido para la evaluación.
+- Consecuencias, que se resuelven en el despliegue del Sprint 4 (`sprint-4.md`):
+  - las credenciales de la semilla y del README quedan a la vista: son solo para el entorno local, y la semilla no
+    se ejecuta en la demo publicada;
+  - el operador de la demo se crea con `admin:crear-operador`, y las cuentas para el tribunal usan claves que no
+    están en el repositorio;
+  - los secretos siguen fuera del repositorio (`.env` no se versiona).
+- Alternativa descartada: mantenerlo privado e invitar a la cátedra como colaboradora, porque no cumple con el
+  pedido de compartir el código.
+- Impacto en el documento: "repositorio privado" pasa a "privado durante el desarrollo y público desde la entrega",
+  en la Arquitectura y en Respaldo › Código fuente.
+
 ## Brechas entre el documento y el código
 
 Son puntos que el documento describe como parte del sistema y que el código todavía no hace. Cada una se cierra de

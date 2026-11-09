@@ -67,7 +67,8 @@ Abrí <http://localhost:3000>.
 
 ## 3. Usuarios de prueba
 
-Solo para el entorno local. No usar fuera de la demo.
+Estas credenciales son solo para el entorno local. La demo publicada no carga la
+semilla y usa otras cuentas, cuyas claves no están en el repositorio.
 
 | Perfil   | Correo                                  | Contraseña       |
 |----------|-----------------------------------------|------------------|

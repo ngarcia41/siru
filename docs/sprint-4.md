@@ -50,6 +50,11 @@ Están detalladas en `decisiones.md`, en la tabla de brechas.
   e incremental de lunes a sábado a las 02:00, con pg_basebackup de PostgreSQL 17 (requiere `summarize_wal`).
   Las copias se cifran y se registra su hash, según la política 3-2-1 del documento.
 - Variables de entorno de producción documentadas en `.env.example`, sin valores reales.
+- Cuentas de la demo publicada (D-21, el repositorio pasa a público en la entrega):
+  - la semilla no se ejecuta en la demo publicada: `scripts/semilla.ts` se niega a correr si `NODE_ENV` es
+    `production` (hoy no lo controla, así que hay que agregarlo);
+  - el operador se crea con `npm run admin:crear-operador`;
+  - las cuentas para el tribunal usan claves que no están en el repositorio.
 
 ## Apoyo a la validación con vecinos
 
