@@ -51,7 +51,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 Abrí `.env` y completá estos dos valores:
 
-- **`DATABASE_URL`:** reemplazá `TU_CONTRASEÑA` por la contraseña del usuario postgres.
+- **`DATABASE_URL` y `DATABASE_URL_PRUEBA`:** reemplazá `TU_CONTRASEÑA` por la contraseña del usuario postgres.
 - **`SESION_SECRETO`:** pegá el valor que imprimió el comando anterior.
 
 Después, instalá las dependencias y creá la base:
@@ -104,21 +104,25 @@ seguro.
 registro, verificación, bloqueo, inactividad, duplicados, confirmaciones,
 permisos y auditoría.
 
-**Las pruebas crean datos.** Corrélas solo sobre una base de prueba:
+Las pruebas crean y modifican datos, así que corren sobre una base aparte,
+`siru_prueba`, y nunca sobre `siru`:
 
-1. En `.env`, cambiá temporalmente el final de `DATABASE_URL` de `/siru` a `/siru_prueba`.
-2. Corré estos comandos:
+1. En `.env`, completá `DATABASE_URL_PRUEBA` con la misma contraseña que `DATABASE_URL`
+   (el final de la URL tiene que ser `/siru_prueba`).
+2. Detené `npm run dev` si está corriendo, porque la compilación reescribe la carpeta `.next`.
+3. Corré:
 
    ```powershell
-   npm run db:migrar
-   npm run db:semilla
-   npm run build
-   npm start
-   # en otra terminal:
-   npx tsx pruebas/api.prueba.ts http://localhost:3000
+   npm run prueba
    ```
 
-3. Volvé a dejar `DATABASE_URL` como estaba.
+El comando:
+- borra y vuelve a crear `siru_prueba`, la migra y carga la semilla;
+- compila el sistema y lo levanta en el puerto 3001 contra esa base;
+- corre todos los archivos `pruebas/*.prueba.ts` y apaga el servidor.
+
+Si la base de destino no se llama `siru_prueba`, el comando se niega a correr.
+Termina con código 1 si falla alguna prueba.
 
 ## 7. Control de versiones (recomendado)
 

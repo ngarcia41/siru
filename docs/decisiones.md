@@ -134,7 +134,7 @@ operador desestime el duplicado. El cambio de categoría no recalcula el IP; el 
 ### D-16 · Fecha EXIF sin zona horaria (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
 Si la foto no informa su desfase horario, la fecha de captura se interpreta en la hora de Argentina (UTC−3).
 
-### D-17 · Pruebas sobre una base aislada (Implementación · Aprobada el 09/11/2026 · Sprint 3)
+### D-17 · Pruebas sobre una base aislada (Implementación · Implementada el 09/11/2026 · Sprint 3)
 `npm run prueba` recrea `siru_prueba`, levanta el servidor contra esa base, corre las pruebas y lo apaga. Se niega a
 correr si la base de destino no es `siru_prueba`. Impacto en el documento: ninguno.
 

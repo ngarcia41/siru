@@ -9,6 +9,7 @@
     "lint": "next lint",
     "db:migrar": "tsx scripts/migrar.ts",
     "db:semilla": "tsx scripts/semilla.ts",
+    "prueba": "tsx scripts/prueba.ts",
     "admin:crear-operador": "tsx scripts/crear-operador.ts",
     "admin:blanquear-clave": "tsx scripts/blanquear-clave.ts"
   },
