@@ -220,6 +220,26 @@ Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifi
 - Alternativa descartada: aceptarla, porque deja abierta esa forma de evitar el control.
 - Impacto en el documento: una oración en "Controles sobre la imagen".
 
+### D-24 · Verificar el duplicado al elegir la categoría (Implementación · Implementada el 09/11/2026 en la T15 · Sprint 3)
+- Documento: ante un duplicado por cercanía, "el sistema propone confirmar el incidente existente", pero no dice en
+  qué momento del alta.
+- Antes: el duplicado se detectaba recién al enviar el alta. Un vecino que quería confirmar un incidente existente
+  escribía la descripción y sacaba una foto que después se descartaban, y además subía esa foto para nada.
+- Decisión: la verificación se hace justo después de elegir la categoría (paso 2), con la misma consulta PostGIS del
+  alta (`ST_DWithin` a 50 m sobre los incidentes Sin verificar, Activo o En revisión) y sin crear nada:
+  `POST /api/incidents/cercania`, solo para el vecino. La posición viaja en el cuerpo y no en la URL, para que no quede
+  en los registros de acceso.
+  - Si hay un incidente abierto de esa categoría a menos de 50 m, se muestra ahí mismo la propuesta de confirmarlo.
+  - Si no se puede confirmar, se explica por qué en lugar de ofrecer el botón: es un reporte del mismo vecino (necesita
+    la confirmación de otros vecinos), ya lo confirmó, o está en revisión.
+  - El control al enviar el alta se mantiene, por si alguien reportó mientras tanto, y responde con el mismo aviso.
+- Motivo: ahorra datos móviles y tiempo al vecino, y es la misma regla aplicada antes.
+- Sin cambios en la base ni pantallas nuevas: se reutiliza el panel de duplicado del alta. También se corrigió el
+  título "Confirmación registrada", que salía con el color de error y ahora usa el de éxito.
+- Alternativa descartada: dejar la verificación solo al enviar, por el costo descripto arriba.
+- **Impacto en el documento: actualizar el diagrama de secuencia del alta de incidente.** La consulta de duplicados
+  pasa a hacerse después de elegir la categoría y antes de la descripción y la foto, y se repite al enviar.
+
 ## Brechas entre el documento y el código
 
 Son puntos que el documento describe como parte del sistema y que el código todavía no hace. Cada una se cierra de

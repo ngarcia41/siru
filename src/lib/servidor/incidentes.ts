@@ -13,7 +13,7 @@ import { auditar } from "./auditoria";
 import { validarExif, type ExifDeclarado } from "./imagen";
 import { almacenamiento, claveFoto, claveMiniatura, miniaturaDe } from "./almacenamiento";
 import { recalcularIndices } from "./prioridad";
-import type { Incident, IncidentCategory, IncidentSeverity, IncidentStatus } from "../types";
+import type { Incident, IncidentCategory, IncidentSeverity, IncidentStatus, MotivoNoConfirmable } from "../types";
 import {
   CATEGORIAS, LIMITE_CONFIRMACIONES_24H, LIMITE_REPORTES_24H, PRECISION_GPS_MAXIMA, RADIO_METROS, UMBRAL_ACTIVACION,
 } from "../reglas";
@@ -97,6 +97,65 @@ function validarPrecision(precision: unknown): Resultado<never> | null {
 }
 
 // ---------------------------------------------------------------------------
+// Duplicado por cercanía (HU-02, RF04)
+// ---------------------------------------------------------------------------
+
+export interface DuplicadoCercano {
+  nearbyIncident: Incident;
+  distanceMeters: number;
+  motivoNoConfirmable: MotivoNoConfirmable;
+}
+
+/**
+ * Busca un incidente abierto (Sin verificar, Activo o En revisión) de la misma
+ * categoría a menos de 50 m, con ST_DWithin sobre geography (usa el índice GiST).
+ * Es la única consulta de duplicados: la usan la verificación del paso 2 (D-24)
+ * y el alta. No modifica nada.
+ */
+async function buscarDuplicado(
+  c: PoolClient,
+  usuarioId: number,
+  d: { lat: number; lng: number; categoria: string }
+): Promise<DuplicadoCercano | null> {
+  const cercano = (await c.query(
+    `SELECT i.incidente_id, i.usuario_id, i.estado,
+            ST_Distance(i.ubicacion::geography, ${punto(1, 2)}::geography) AS distancia,
+            EXISTS (SELECT 1 FROM confirmacion cf WHERE cf.incidente_id = i.incidente_id AND cf.usuario_id = $6) AS ya_confirmo
+       FROM incidente i JOIN categoria c ON c.categoria_id = i.categoria_id
+      WHERE c.nombre = $3 AND i.estado = ANY($4)
+        AND ST_DWithin(i.ubicacion::geography, ${punto(1, 2)}::geography, $5)
+      ORDER BY distancia LIMIT 1`,
+    [d.lng, d.lat, d.categoria, ESTADOS_ABIERTOS, RADIO_METROS, usuarioId]
+  )).rows[0];
+  if (!cercano) return null;
+
+  const motivoNoConfirmable: MotivoNoConfirmable =
+    cercano.usuario_id === usuarioId ? "PROPIO_REPORTE"
+      : cercano.ya_confirmo ? "YA_CONFIRMADO"
+        : cercano.estado === "EN_REVISION" ? "EN_REVISION"
+          : null;
+  return {
+    nearbyIncident: (await obtenerIncidente(cercano.incidente_id, c))!,
+    distanceMeters: Number(cercano.distancia),
+    motivoNoConfirmable,
+  };
+}
+
+/**
+ * D-24: verificación anticipada del paso 2 del alta. Con la ubicación y la
+ * categoría, informa si ya hay un incidente abierto de esa categoría a menos de
+ * 50 m, para proponer confirmarlo antes de que el vecino escriba la descripción
+ * y saque la foto. No crea ni modifica nada, y no reemplaza el control del alta.
+ */
+export async function verificarCercania(
+  usuarioId: number,
+  d: { lat: number; lng: number; categoria: string }
+): Promise<Resultado<{ duplicado: DuplicadoCercano | null }>> {
+  if (!(CATEGORIAS as readonly string[]).includes(d.categoria)) return rechazo(400, "CATEGORIA_INVALIDA", "La categoría no es válida.");
+  return transaccion(async (c) => ({ ok: true, datos: { duplicado: await buscarDuplicado(c, usuarioId, d) } }));
+}
+
+// ---------------------------------------------------------------------------
 // Alta de incidente (HU-02)
 // ---------------------------------------------------------------------------
 export async function crearIncidente(
@@ -138,21 +197,13 @@ export async function crearIncidente(
       return rechazo(409, "FOTO_DUPLICADA", "Esa fotografía ya se usó en otro reporte. Tomá una foto nueva del incidente.");
     }
 
-    const cercano = (await c.query(
-      `SELECT i.incidente_id,
-              ST_Distance(i.ubicacion::geography, ${punto(1, 2)}::geography) AS distancia
-         FROM incidente i JOIN categoria c ON c.categoria_id = i.categoria_id
-        WHERE c.nombre = $3 AND i.estado = ANY($4)
-          AND ST_DWithin(i.ubicacion::geography, ${punto(1, 2)}::geography, $5)
-        ORDER BY distancia LIMIT 1`,
-      [d.lng, d.lat, d.categoria, ESTADOS_ABIERTOS, RADIO_METROS]
-    )).rows[0];
+    // El mismo control que la verificación del paso 2 (D-24): se repite al enviar por si
+    // alguien reportó el mismo incidente mientras tanto.
+    const cercano = await buscarDuplicado(c, usuarioId, d);
     if (cercano) {
-      const existente = await obtenerIncidente(cercano.incidente_id, c);
-      const distancia = Number(cercano.distancia);
       return rechazo(409, "GEOFENCE_DUPLICATE",
-        `Ya existe un incidente de tipo "${d.categoria}" a ${Math.round(distancia)} metros. ¿Querés confirmar su existencia?`,
-        { nearbyIncident: existente, distanceMeters: distancia });
+        `Ya existe un incidente de tipo "${d.categoria}" a ${Math.round(cercano.distanceMeters)} metros. ¿Querés confirmar su existencia?`,
+        { ...cercano });
     }
 
     // B-02 y B-03: se guardan la foto privada y la miniatura después de todas las validaciones

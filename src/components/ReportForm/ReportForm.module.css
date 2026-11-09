@@ -535,6 +535,11 @@
   color: var(--color-error-text);
 }
 
+/* Título de una confirmación registrada: color de éxito, no de error */
+.geofenceTitleExito {
+  color: var(--color-success-text);
+}
+
 .geofenceDesc {
   font-size: 0.85rem;
   color: var(--color-text-secondary);

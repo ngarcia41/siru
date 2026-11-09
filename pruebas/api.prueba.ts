@@ -300,6 +300,43 @@ async function main() {
   caso("Una clave con otro formato se rechaza sin tocar el disco (400)", malas.every((m) => m.status === 400), malas.map((m) => m.status).join(", "));
   img = await pedirImagen(op, `/api/imagenes/fotos/${"0".repeat(64)}.jpg`);
   caso("Una imagen inexistente responde 404", img.status === 404, `HTTP ${img.status}`);
+
+  // --- D-24 (T15): verificación de duplicados al elegir la categoría, sin crear nada ---
+  // Incidente 1 de la semilla: bache activo, reportado por vecino1 y confirmado por vecino2, 3 y 4.
+  const junto1 = alNorte({ lat: -34.6479, lng: -58.5618 }, 30);
+  const conteo = async () => (await db.query(
+    "SELECT (SELECT count(*) FROM incidente)::int AS i, (SELECT count(*) FROM auditoria)::int AS a, (SELECT count(*) FROM confirmacion)::int AS c"
+  )).rows[0];
+  const antesVerif = await conteo();
+  const verificar = (s: Sesion | null, cuerpo: unknown) => llamar(s, "POST", "/api/incidents/cercania", cuerpo);
+  r = await verificar(null, { ...junto1, category: "Bache" });
+  caso("Verificar la cercanía exige sesión (401)", r.status === 401, `HTTP ${r.status}`);
+  r = await verificar(op, { ...junto1, category: "Bache" });
+  caso("Un operador no usa la verificación del alta (403)", r.status === 403, `HTTP ${r.status}`);
+  r = await verificar(nuevo, { ...junto1, category: "Bache" });
+  const dup = r.data?.data?.duplicado;
+  caso("Misma categoría a 30 m: propone confirmar el existente, con la distancia de PostGIS",
+    r.status === 200 && dup?.nearbyIncident?.id === "1" && Math.round(dup?.distanceMeters) === 30 && dup?.motivoNoConfirmable === null,
+    `incidente ${dup?.nearbyIncident?.id} a ${Math.round(dup?.distanceMeters ?? -1)} m, motivo ${dup?.motivoNoConfirmable}`);
+  r = await verificar(nuevo, { ...junto1, category: "Anegamiento" });
+  caso("Otra categoría en el mismo lugar: no hay duplicado", r.status === 200 && r.data?.data?.duplicado === null, JSON.stringify(r.data?.data));
+  r = await verificar(nuevo, { ...alNorte({ lat: -34.6479, lng: -58.5618 }, 80), category: "Bache" });
+  caso("Misma categoría a 80 m: no hay duplicado", r.status === 200 && r.data?.data?.duplicado === null, JSON.stringify(r.data?.data));
+  r = await verificar(v1, { ...junto1, category: "Bache" });
+  caso("Si el incidente es del mismo vecino, avisa que necesita la confirmación de otros",
+    r.data?.data?.duplicado?.motivoNoConfirmable === "PROPIO_REPORTE", r.data?.data?.duplicado?.motivoNoConfirmable);
+  r = await verificar(v2, { ...junto1, category: "Bache" });
+  caso("Si el vecino ya lo confirmó, lo informa", r.data?.data?.duplicado?.motivoNoConfirmable === "YA_CONFIRMADO", r.data?.data?.duplicado?.motivoNoConfirmable);
+  r = await verificar(nuevo, { ...junto1, category: "Pozo" });
+  const r2 = await verificar(nuevo, { lat: 200, lng: -58.5, category: "Bache" });
+  caso("Categoría o ubicación inválidas se rechazan (400)", r.status === 400 && r2.status === 400, `${r.status}, ${r2.status}`);
+  const despuesVerif = await conteo();
+  caso("La verificación no crea incidentes, confirmaciones ni registros de auditoría",
+    JSON.stringify(antesVerif) === JSON.stringify(despuesVerif), `${JSON.stringify(antesVerif)} → ${JSON.stringify(despuesVerif)}`);
+  r = await alta(nuevo, { ...datos, geom: junto1, photoHash: hashFoto("t15"), gpsAccuracy: 10 });
+  caso("El alta mantiene su propio control de duplicados (409, con el mismo aviso)",
+    r.status === 409 && r.data?.error === "GEOFENCE_DUPLICATE" && r.data?.nearbyIncident?.id === "1" && r.data?.motivoNoConfirmable === null,
+    `HTTP ${r.status} · ${r.data?.error}`);
   r = await alta(op, { ...datos, geom: alNorte(base, 2000), photoHash: hashFoto("d"), gpsAccuracy: 10 });
   caso("Un operador no registra incidentes", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
   r = await llamar(op, "PATCH", `/api/incidents/${incId}`, { action: "resolve", observacion: "Bacheo verificado en el lugar." });

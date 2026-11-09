@@ -49,6 +49,7 @@ para que el cierre quede registrado de forma confiable.
 | HU-05 | T12 | Pantallas: informar la resolución (vecino) y bandeja del operador con la evidencia y las acciones | Alta | 1,5 días | Pendiente |
 | Técnica | T13 | Pruebas de HU-04 y HU-05, y adecuación de las 42 pruebas anteriores | Alta | 1 día | Pendiente |
 | Técnica | T14 | Semilla con imágenes e índices, README y cierre del sprint | Media | 0,5 día | Pendiente |
+| HU-02 | T15 | Verificar el duplicado por cercanía al elegir la categoría (paso 2), sin crear nada, y color de éxito en "Confirmación registrada" (D-24) | Media | 0,5 día | Hecha (09/11/2026) |
 
 ## Especificación por tarea
 
@@ -157,6 +158,18 @@ para que el cierre quede registrado de forma confiable.
   - **Operador:** filtro "En revisión" con la miniatura de la evidencia, quién informó, cuándo y a qué distancia, y
     los botones Validar y Rechazar (este último pide la observación). En los incidentes sin verificar o activos,
     agregar Desestimar y Reclasificar.
+
+### T15: duplicado verificado al elegir la categoría (D-24, agregada el 09/11/2026)
+- `POST /api/incidents/cercania` con `{ lat, lng, category }`, solo para el vecino. Usa la misma consulta PostGIS que
+  el alta (una sola función, `buscarDuplicado`) y no crea ni modifica nada.
+- Responde `{ duplicado: null }` o `{ duplicado: { nearbyIncident, distanceMeters, motivoNoConfirmable } }`, donde el
+  motivo es `PROPIO_REPORTE`, `YA_CONFIRMADO`, `EN_REVISION` o null. El 409 del alta informa el mismo motivo.
+- El formulario la consulta al entrar al paso 2 y cada vez que cambia la categoría. Si hay un duplicado, muestra el
+  panel de propuesta de confirmación; si no se puede confirmar, explica por qué.
+- El control al enviar se mantiene.
+- El título "Confirmación registrada" usa el color de éxito.
+- Pruebas: sin sesión (401), operador (403), duplicado a 30 m con su distancia, otra categoría, misma categoría a
+  80 m, reporte propio, ya confirmado, datos inválidos (400), que no se cree nada y que el alta siga controlando.
 
 ## Pruebas mínimas esperadas (T13)
 

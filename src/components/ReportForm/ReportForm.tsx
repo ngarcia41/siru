@@ -5,7 +5,8 @@
  * Funcionalidades implementadas (TFG §5):
  *   1. Captura GPS real via navigator.geolocation.getCurrentPosition
  *   2. Foto: huella SHA-256 y EXIF del original, y versión reducida que se sube (D-19)
- *   3. Geofencing de 50m: bloquea duplicado y ofrece confirmación de confianza
+ *   3. Duplicado a menos de 50 m: se verifica al elegir la categoría (paso 2, D-24)
+ *      y otra vez al enviar; propone confirmar el incidente existente
  *   4. Envío a POST /api/incidents como multipart/form-data
  *
  * Flujo de pasos:
@@ -16,8 +17,8 @@
  */
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import type { GeoPoint, IncidentCategory, IncidentSeverity, Incident } from "@/lib/types";
+import { useState, useRef, useCallback, useEffect } from "react";
+import type { GeoPoint, IncidentCategory, IncidentSeverity, Incident, MotivoNoConfirmable } from "@/lib/types";
 import { GEOFENCE_RADIUS_M, formatDistance } from "@/lib/spatial";
 import { ErrorFoto, formatearTamano, prepararFoto, type FotoPreparada } from "@/lib/cliente/imagen";
 import { api } from "@/lib/cliente/api";
@@ -34,6 +35,8 @@ type GeofenceAlert = {
   type: "duplicate";
   nearbyIncident: Incident;
   distance: number;
+  /** Si no se puede confirmar (reporte propio, ya confirmado o en revisión), se explica por qué. */
+  motivo: MotivoNoConfirmable;
 };
 
 interface ReportFormProps {
@@ -84,8 +87,44 @@ export default function ReportForm({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [trustMessage, setTrustMessage] = useState<string | null>(null);
+  const [verificandoCercania, setVerificandoCercania] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Número de la última verificación pedida: descarta respuestas viejas si la categoría cambió. */
+  const verificacionRef = useRef(0);
+
+  // -----------------------------------------------------------------------
+  // STEP 2: verificación anticipada de duplicados (D-24)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Apenas se conoce la categoría (al entrar al paso 2 y cada vez que cambia),
+   * se consulta si ya hay un incidente abierto de esa categoría a menos de
+   * 50 m. Si lo hay, se propone confirmarlo antes de escribir la descripción y
+   * sacar la foto. No crea nada; el alta vuelve a controlarlo al enviar.
+   */
+  useEffect(() => {
+    if (step !== "details" || !location) return;
+    const numero = ++verificacionRef.current;
+    setVerificandoCercania(true);
+    api("/api/incidents/cercania", {
+      method: "POST",
+      body: JSON.stringify({ lat: location.lat, lng: location.lng, category }),
+    })
+      .then(({ res, data }) => {
+        if (numero !== verificacionRef.current || !res.ok) return;
+        const d = data?.data?.duplicado;
+        if (d) {
+          setGeofenceAlert({
+            type: "duplicate", nearbyIncident: d.nearbyIncident, distance: d.distanceMeters, motivo: d.motivoNoConfirmable ?? null,
+          });
+        }
+      })
+      .catch(() => { /* si falla, el control del alta sigue vigente */ })
+      .finally(() => {
+        if (numero === verificacionRef.current) setVerificandoCercania(false);
+      });
+  }, [step, location, category]);
 
   // -----------------------------------------------------------------------
   // STEP 1: Captura GPS
@@ -225,6 +264,7 @@ export default function ReportForm({
           type: "duplicate",
           nearbyIncident: data.nearbyIncident,
           distance: data.distanceMeters,
+          motivo: data.motivoNoConfirmable ?? null,
         });
         setSubmitting(false);
         return;
@@ -359,6 +399,7 @@ export default function ReportForm({
                 onCategoryChange={setCategory}
                 onDescriptionChange={setDescription}
                 onSeverityChange={setSeverity}
+                verificando={verificandoCercania}
                 onBack={() => setStep("gps")}
                 onNext={() => setStep("photo")}
               />
@@ -504,7 +545,7 @@ function StepGPS({
 function StepDetails({
   category, description, severity,
   onCategoryChange, onDescriptionChange, onSeverityChange,
-  onBack, onNext,
+  verificando, onBack, onNext,
 }: {
   category: IncidentCategory;
   description: string;
@@ -512,10 +553,12 @@ function StepDetails({
   onCategoryChange: (v: IncidentCategory) => void;
   onDescriptionChange: (v: string) => void;
   onSeverityChange: (v: IncidentSeverity) => void;
+  /** Se está consultando si hay un incidente igual cerca (D-24). */
+  verificando: boolean;
   onBack: () => void;
   onNext: () => void;
 }) {
-  const canContinue = category && description.trim().length >= 20;
+  const canContinue = category && description.trim().length >= 20 && !verificando;
 
   return (
     <div className={styles.step}>
@@ -530,6 +573,11 @@ function StepDetails({
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+        {verificando && (
+          <span className={styles.charCount} aria-live="polite">
+            Buscando reportes de esta categoría a menos de {GEOFENCE_RADIUS_M} m…
+          </span>
+        )}
       </div>
 
       <div className={styles.field}>
@@ -753,6 +801,22 @@ function StepConfirm({
   );
 }
 
+/** Avisos cuando no se puede proponer confirmar el incidente cercano (D-24). */
+const AVISO_NO_CONFIRMABLE: Record<Exclude<MotivoNoConfirmable, null>, { titulo: string; detalle: string }> = {
+  PROPIO_REPORTE: {
+    titulo: "Ya reportaste este incidente",
+    detalle: "Lo cargaste vos, así que no podés confirmarlo: necesita la confirmación de otros vecinos que pasen por el lugar.",
+  },
+  YA_CONFIRMADO: {
+    titulo: "Ya confirmaste este incidente",
+    detalle: "Tu confirmación ya está registrada. Cada vecino puede confirmar un incidente una sola vez.",
+  },
+  EN_REVISION: {
+    titulo: "Este incidente está en revisión",
+    detalle: "Ya se informó que se resolvió y un operador lo está revisando.",
+  },
+};
+
 // --- Panel de alerta de geofencing ---
 function GeofenceAlertPanel({
   alert, onAddTrust, onCancel, onClose, submitting, error, done,
@@ -770,7 +834,7 @@ function GeofenceAlertPanel({
     return (
       <div className={styles.geofenceAlert}>
         <div className={styles.geofenceIcon}>✅</div>
-        <h3 className={styles.geofenceTitle}>Confirmación registrada</h3>
+        <h3 className={`${styles.geofenceTitle} ${styles.geofenceTitleExito}`}>Confirmación registrada</h3>
         <p className={styles.geofenceDesc}>{done}</p>
         <div className={styles.geofenceActions}>
           <button className={styles.btnTrust} onClick={onClose} id="btn-geofence-done">Volver al mapa</button>
@@ -778,6 +842,35 @@ function GeofenceAlertPanel({
       </div>
     );
   }
+  // D-24: si el vecino no puede confirmarlo, se le explica por qué en lugar de ofrecer el botón.
+  if (alert.motivo) {
+    const aviso = AVISO_NO_CONFIRMABLE[alert.motivo];
+    return (
+      <div className={styles.geofenceAlert}>
+        <div className={styles.geofenceIcon}>ℹ️</div>
+        <h3 className={styles.geofenceTitle}>{aviso.titulo}</h3>
+        <p className={styles.geofenceDesc}>
+          Hay un incidente de tipo <strong>&quot;{inc.category}&quot;</strong> a{" "}
+          <strong>{formatDistance(alert.distance)}</strong> de tu ubicación. {aviso.detalle}
+        </p>
+        <div className={styles.geofenceCard}>
+          <div className={styles.geofenceCardTitle}>{inc.category}</div>
+          <div className={styles.geofenceCardDesc}>
+            {inc.description.length > 100 ? `${inc.description.slice(0, 100)}…` : inc.description}
+          </div>
+          <div className={styles.geofenceCardMeta}>
+            <span>★ {inc.trustPoints} pts de confianza</span>
+            <span>📍 {formatDistance(alert.distance)}</span>
+          </div>
+        </div>
+        <div className={styles.geofenceActions}>
+          <button className={styles.btnSecondary} onClick={onCancel} id="btn-geofence-cancel">Cambiar categoría</button>
+          <button className={styles.btnTrust} onClick={onClose} id="btn-geofence-done">Volver al mapa</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.geofenceAlert}>
       <div className={styles.geofenceIcon}>🛑</div>

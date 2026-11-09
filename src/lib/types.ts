@@ -51,6 +51,12 @@ export interface Incident {
   address?: string;
 }
 
+/**
+ * Por qué no se puede proponer confirmar un incidente cercano (null: se puede).
+ * Lo informan la verificación del paso 2 del alta (D-24) y el 409 del alta.
+ */
+export type MotivoNoConfirmable = "PROPIO_REPORTE" | "YA_CONFIRMADO" | "EN_REVISION" | null;
+
 /** Usuario de la sesión actual, tal como lo informa GET /api/auth/sesion. */
 export interface SesionCliente {
   id: number;
