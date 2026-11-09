@@ -13,7 +13,8 @@ export const RADIO_METROS = 50;
  * Se puede subir temporalmente en .env para probar desde una computadora,
  * cuya ubicación por IP suele tener una precisión de cientos de metros.
  */
-export const PRECISION_GPS_MAXIMA = Number(process.env.NEXT_PUBLIC_PRECISION_GPS_MAXIMA ?? 25);
+export const PRECISION_GPS_DOCUMENTO = 25;
+export const PRECISION_GPS_MAXIMA = Number(process.env.NEXT_PUBLIC_PRECISION_GPS_MAXIMA ?? PRECISION_GPS_DOCUMENTO);
 
 /** Puntos de confianza necesarios para que un incidente pase a Activo. */
 export const UMBRAL_ACTIVACION = 3;
@@ -69,6 +70,20 @@ export const IMAGEN = {
   CACHE_SEGUNDOS: 604800,
 } as const;
 
-export const CATEGORIAS =["Bache", "Luminaria", "Anegamiento", "Basura acumulada", "Otro"] as const;
+/**
+ * Índice de prioridad (HU-04): IP = 100 × (0,5·S + 0,3·C + 0,2·T), solo para incidentes activos.
+ *   S = peso de la severidad (tabla SEVERIDAD)
+ *   C = min(puntos / 6, 1)
+ *   T = min(días enteros desde la activación / 30, 1)   (D-06)
+ */
+export const PESOS_PRIORIDAD = { S: 0.5, C: 0.3, T: 0.2 } as const;
+export const PUNTOS_RESPALDO_MAXIMO = 6;
+export const DIAS_ANTIGUEDAD_MAXIMA = 30;
+/** Bandas: alta si IP ≥ 70; media si 40 ≤ IP < 70; baja si IP < 40. */
+export const BANDAS_PRIORIDAD = { alta: 70, media: 40 } as const;
+/** Hora del recálculo diario, en la zona horaria de Argentina (D-07). */
+export const HORA_RECALCULO = "00:30";
+
+export const CATEGORIAS = ["Bache", "Luminaria", "Anegamiento", "Basura acumulada", "Otro"] as const;
 
 export type Rol = keyof typeof INACTIVIDAD_MINUTOS;

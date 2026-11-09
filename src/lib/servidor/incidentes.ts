@@ -12,6 +12,7 @@ import { consulta, transaccion } from "./db";
 import { auditar } from "./auditoria";
 import { validarExif, type ExifDeclarado } from "./imagen";
 import { almacenamiento, claveFoto, claveMiniatura, miniaturaDe } from "./almacenamiento";
+import { recalcularIndices } from "./prioridad";
 import type { Incident, IncidentCategory, IncidentSeverity, IncidentStatus } from "../types";
 import {
   CATEGORIAS, LIMITE_CONFIRMACIONES_24H, LIMITE_REPORTES_24H, PRECISION_GPS_MAXIMA, RADIO_METROS, UMBRAL_ACTIVACION,
@@ -233,15 +234,22 @@ export async function confirmarIncidente(
       [incidenteId, UMBRAL_ACTIVACION]
     )).rows[0];
 
+    // HU-04: al activarse y con cada confirmación sobre un incidente activo se recalcula el índice,
+    // en la misma transacción que la confirmación.
+    const [calculado] = nuevo.estado === "ACTIVO" ? await recalcularIndices(c, { incidenteId }) : [];
+
     await auditar("CONFIRMA_INCIDENTE", {
       usuarioId, incidenteId, ip,
-      detalle: { distanciaMetros: Math.round(distancia * 10) / 10, puntajeAnterior: inc.puntaje_confianza, puntajeNuevo: nuevo.puntaje_confianza },
+      detalle: {
+        distanciaMetros: Math.round(distancia * 10) / 10, puntajeAnterior: inc.puntaje_confianza, puntajeNuevo: nuevo.puntaje_confianza,
+        ...(calculado ? { indicePrioridad: calculado.indice } : {}),
+      },
     }, c);
     const activado = inc.estado === "SIN_VERIFICAR" && nuevo.estado === "ACTIVO";
     if (activado) {
       await auditar("ACTIVA_INCIDENTE", {
         usuarioId, incidenteId, ip,
-        detalle: { estadoAnterior: "SIN_VERIFICAR", estadoNuevo: "ACTIVO", puntaje: nuevo.puntaje_confianza },
+        detalle: { estadoAnterior: "SIN_VERIFICAR", estadoNuevo: "ACTIVO", puntaje: nuevo.puntaje_confianza, indicePrioridad: calculado?.indice },
       }, c);
     }
     return {
@@ -275,7 +283,11 @@ export async function resolverIncidente(
        VALUES ($1, $2, $3, $2, now(), 'CONFIRMADA')`,
       [incidenteId, operadorId, obs]
     );
-    await c.query("UPDATE incidente SET estado = 'RESUELTO', fecha_cierre = now() WHERE incidente_id = $1", [incidenteId]);
+    // Fuera de ACTIVO el índice de prioridad queda en NULL (D-06). Esta acción se reemplaza en la T10 (D-18).
+    await c.query(
+      "UPDATE incidente SET estado = 'RESUELTO', fecha_cierre = now(), indice_prioridad = NULL WHERE incidente_id = $1",
+      [incidenteId]
+    );
     await auditar("VALIDA_RESOLUCION", {
       usuarioId: operadorId, incidenteId, ip,
       detalle: { estadoAnterior: inc.estado, estadoNuevo: "RESUELTO", observacion: obs },

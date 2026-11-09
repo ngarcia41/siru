@@ -19,6 +19,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "pg";
+import { PRECISION_GPS_DOCUMENTO } from "../src/lib/reglas";
 
 const BASE_PERMITIDA = "siru_prueba";
 const PUERTO = 3001;
@@ -50,7 +51,14 @@ function entornoDePrueba(): NodeJS.ProcessEnv {
   // Todos los procesos hijos (migración, semilla, servidor y pruebas) leen DATABASE_URL.
   // dotenv y Next.js no pisan una variable que ya existe en el entorno.
   // Las imágenes de las pruebas van a su propia carpeta, separada de la de desarrollo.
-  return { ...process.env, DATABASE_URL: url, ALMACENAMIENTO_LOCAL: CARPETA_IMAGENES };
+  // La precisión GPS se fija en el valor del documento aunque .env la tenga subida para
+  // probar desde la computadora (D-05): las pruebas verifican la regla de 25 m.
+  return {
+    ...process.env,
+    DATABASE_URL: url,
+    ALMACENAMIENTO_LOCAL: CARPETA_IMAGENES,
+    NEXT_PUBLIC_PRECISION_GPS_MAXIMA: String(PRECISION_GPS_DOCUMENTO),
+  };
 }
 
 /** Borra y vuelve a crear la base de prueba, conectándose a la base "postgres" del servidor. */
@@ -139,6 +147,13 @@ async function main() {
     console.log(`\n== ${archivos.length - fallaron} de ${archivos.length} archivos de prueba sin fallas.`);
   } finally {
     detener(servidor);
+    // Comprobación final: el servidor de prueba no puede quedar escuchando.
+    let libre = false;
+    for (let i = 0; i < 10 && !libre; i++) {
+      libre = await puertoLibre();
+      if (!libre) await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!libre) console.error(`\nATENCIÓN: el puerto ${PUERTO} sigue ocupado después de apagar el servidor de prueba.`);
   }
   process.exitCode = fallaron ? 1 : 0;
 }

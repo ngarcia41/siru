@@ -51,7 +51,7 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
 
 ## Decisiones para el Sprint 3 (aprobadas el 09/11/2026)
 
-### D-06 · Detalles del índice de prioridad (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
+### D-06 · Detalles del índice de prioridad (Interpretación · Implementada el 09/11/2026 en la T05 · Sprint 3)
 - **Componente T:** usa días enteros desde la activación, `LEAST(floor(días) / 30, 1)`. Así se reproducen exactamente
   los dos ejemplos del documento: IP = 83 e IP ≈ 50 (49,83).
 - **Fuera de ACTIVO:** el IP queda en NULL. Si una resolución rechazada devuelve el incidente a ACTIVO, se recalcula.

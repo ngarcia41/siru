@@ -14,6 +14,7 @@ import "dotenv/config";
 import { createHash } from "node:crypto";
 import { Client } from "pg";
 import sharp from "sharp";
+import { recalcularIndices } from "../src/lib/servidor/prioridad";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const CLAVE_VECINOS = "Ramos#Mejia26";
@@ -231,6 +232,22 @@ async function main() {
   const dist = (await db.query("SELECT distancia_metros FROM confirmacion WHERE incidente_id = $1 ORDER BY 1", [incId])).rows.map((x) => Number(x.distancia_metros));
   caso("Se guarda la distancia medida por PostGIS en cada confirmación", dist.length === 2 && dist.every((d) => d < 50), dist.join(" m, ") + " m");
 
+  // --- HU-04: índice de prioridad al activar y con cada confirmación (T05) ---
+  const indiceDe = async (id: unknown) =>
+    (await db.query("SELECT indice_prioridad FROM incidente WHERE incidente_id = $1", [id])).rows[0]?.indice_prioridad as string | null;
+  caso("Al activarse, el incidente recibe su índice (alta, 3 puntos, 0 días: 65,00)", (await indiceDe(incId)) === "65.00", String(await indiceDe(incId)));
+  // Otro incidente (bache alto, Sin verificar): dos confirmaciones lo activan y una tercera lo recalcula.
+  const v3 = await ingresar("vecino3@siru.local", CLAVE_VECINOS);
+  const lugar = alNorte(alNorte(base, 1000), 10);
+  const indicePrevio = await indiceDe(incConFoto);
+  for (const v of [v1, v2]) await llamar(v, "POST", "/api/trust", { incidentId: incConFoto, userLocation: lugar, gpsAccuracy: 8 });
+  const alActivar = await indiceDe(incConFoto);
+  r = await llamar(v3, "POST", "/api/trust", { incidentId: incConFoto, userLocation: lugar, gpsAccuracy: 8 });
+  const conCuatro = await indiceDe(incConFoto);
+  caso("Sin verificar no tiene índice; al llegar a 3 puntos se calcula y una confirmación más lo recalcula (65,00 → 70,00)",
+    indicePrevio === null && alActivar === "65.00" && conCuatro === "70.00" && r.status === 200,
+    `${indicePrevio} → ${alActivar} → ${conCuatro}`);
+
   // --- Permisos por perfil ---
   r = await llamar(v1, "PATCH", `/api/incidents/${incId}`, { action: "resolve" });
   caso("Un vecino no puede registrar el cierre", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
@@ -336,6 +353,35 @@ async function main() {
     estados.push(rr.status);
   }
   caso("El sexto reporte del día se rechaza", JSON.stringify(estados) === "[201,201,201,201,201,429]", estados.join(", "));
+
+  // --- HU-04: ejemplos del documento, con la misma función que usa el sistema (T05) ---
+  const vecinoId = (await db.query("SELECT usuario_id FROM usuario WHERE email = 'vecino1@siru.local'")).rows[0].usuario_id;
+  const ejemplo = async (categoria: string, severidad: string, puntos: number, dias: number, n: number) => {
+    const { rows } = await db.query(
+      `INSERT INTO incidente (usuario_id, categoria_id, severidad_id, descripcion, ubicacion, precision_gps, hash_foto,
+                              puntaje_confianza, estado, fecha_activacion)
+       VALUES ($1, (SELECT categoria_id FROM categoria WHERE nombre = $2), (SELECT severidad_id FROM severidad WHERE nombre = $3),
+               'Ejemplo del documento para el índice de prioridad.', ST_SetSRID(ST_MakePoint(-58.60, $4), 4326), 10, $5,
+               $6, 'ACTIVO', now() - make_interval(days => $7, hours => 1))
+       RETURNING incidente_id`,
+      [vecinoId, categoria, severidad, -34.70 - n * 0.01, hashFoto(`ejemplo${n}`), puntos, dias]
+    );
+    const [calc] = await recalcularIndices(db, { incidenteId: rows[0].incidente_id });
+    return calc?.indice;
+  };
+  const bache = await ejemplo("Bache", "alta", 5, 12, 1);
+  caso("Ejemplo del documento: bache alto, 5 puntos, 12 días activo → IP = 83,00", bache === 83, String(bache));
+  const luminaria = await ejemplo("Luminaria", "media", 3, 2, 2);
+  caso("Ejemplo del documento: luminaria media, 3 puntos, 2 días activa → IP = 49,83", luminaria === 49.83, String(luminaria));
+  const tope = await ejemplo("Anegamiento", "baja", 9, 45, 3);
+  caso("Los componentes C y T no superan 1: baja, 9 puntos, 45 días → IP = 66,50", tope === 66.5, String(tope));
+  await recalcularIndices(db);
+  const { fuera, activosSin } = (await db.query(
+    `SELECT count(*) FILTER (WHERE estado <> 'ACTIVO' AND indice_prioridad IS NOT NULL)::int AS fuera,
+            count(*) FILTER (WHERE estado = 'ACTIVO' AND indice_prioridad IS NULL)::int AS "activosSin"
+       FROM incidente`
+  )).rows[0];
+  caso("Solo los ACTIVO tienen índice; los demás quedan en NULL", fuera === 0 && activosSin === 0, `fuera de ACTIVO con índice: ${fuera}, activos sin índice: ${activosSin}`);
 
   await db.end();
   const fallas = resultados.filter((x) => !x.ok).length;

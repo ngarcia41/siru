@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { pool } from "../src/lib/servidor/db";
 import { hashear } from "../src/lib/servidor/clave";
 import { requisitosIncumplidos } from "../src/lib/politicaClave";
+import { recalcularIndices } from "../src/lib/servidor/prioridad";
 
 const CLAVE_VECINOS = "Ramos#Mejia26";
 const CLAVE_OPERADOR_TEMPORAL = "Fomento#Temp26";
@@ -96,7 +97,10 @@ async function main() {
         );
       }
     }
+    // HU-04: los incidentes activos de la demostración llegan con su índice de prioridad calculado.
+    const indices = await recalcularIndices(c);
     await c.query("COMMIT");
+    console.log(`Índice de prioridad calculado para ${indices.length} incidentes activos.`);
     console.log(`Datos de demostración cargados: 1 operador, ${VECINOS.length} vecinos y ${INCIDENTES.length} incidentes.`);
     console.log("Las credenciales de prueba están en el README.");
   } catch (e) {
