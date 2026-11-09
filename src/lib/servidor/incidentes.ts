@@ -10,6 +10,7 @@
 import type { PoolClient } from "pg";
 import { consulta, transaccion } from "./db";
 import { auditar } from "./auditoria";
+import { validarExif, type ExifDeclarado } from "./imagen";
 import type { Incident, IncidentCategory, IncidentSeverity, IncidentStatus } from "../types";
 import {
   CATEGORIAS, LIMITE_CONFIRMACIONES_24H, LIMITE_REPORTES_24H, PRECISION_GPS_MAXIMA, RADIO_METROS, UMBRAL_ACTIVACION,
@@ -95,7 +96,10 @@ function validarPrecision(precision: unknown): Resultado<never> | null {
 // ---------------------------------------------------------------------------
 export async function crearIncidente(
   usuarioId: number,
-  d: { lat: number; lng: number; precision: unknown; categoria: string; severidad: string; descripcion: string; hashFoto: string },
+  d: {
+    lat: number; lng: number; precision: unknown; categoria: string; severidad: string; descripcion: string;
+    hashFoto: string; exif: ExifDeclarado;
+  },
   ip: string | null
 ): Promise<Resultado<Incident>> {
   const errPrecision = validarPrecision(d.precision);
@@ -117,6 +121,10 @@ export async function crearIncidente(
     if (n >= LIMITE_REPORTES_24H) {
       return rechazo(429, "LIMITE_REPORTES", `Alcanzaste el máximo de ${LIMITE_REPORTES_24H} reportes en 24 horas.`);
     }
+
+    // B-01: fecha de captura de 24 h como máximo y coordenadas EXIF a menos de 50 m del dispositivo.
+    const exif = await validarExif(c, d.exif, { lat: d.lat, lng: d.lng });
+    if (!exif.ok) return exif;
 
     const foto = await c.query("SELECT incidente_id FROM incidente WHERE hash_foto = $1", [d.hashFoto]);
     if (foto.rowCount) {
@@ -141,10 +149,11 @@ export async function crearIncidente(
     }
 
     const { rows } = await c.query(
-      `INSERT INTO incidente (usuario_id, categoria_id, severidad_id, descripcion, ubicacion, precision_gps, hash_foto, puntaje_confianza)
-       VALUES ($3, (SELECT categoria_id FROM categoria WHERE nombre = $4), $5, $6, ${punto(1, 2)}, $7, $8, 1)
+      `INSERT INTO incidente (usuario_id, categoria_id, severidad_id, descripcion, ubicacion, precision_gps, hash_foto,
+                             fecha_captura_foto, puntaje_confianza)
+       VALUES ($3, (SELECT categoria_id FROM categoria WHERE nombre = $4), $5, $6, ${punto(1, 2)}, $7, $8, $9, 1)
        RETURNING incidente_id`,
-      [d.lng, d.lat, usuarioId, d.categoria, severidadId, descripcion, d.precision, d.hashFoto]
+      [d.lng, d.lat, usuarioId, d.categoria, severidadId, descripcion, d.precision, d.hashFoto, exif.datos.fechaCaptura]
     );
     const id = rows[0].incidente_id as number;
     await auditar("ALTA_INCIDENTE", {

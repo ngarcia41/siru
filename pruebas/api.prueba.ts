@@ -68,6 +68,8 @@ async function imagenDePrueba(ancho = 1600, alto = 1200, formato: "jpeg" | "png"
 type DatosAlta = {
   geom: { lat: number; lng: number }; gpsAccuracy: number; category: string; severity: string;
   description: string; photoHash: string;
+  /** Datos EXIF del original que informa el teléfono (opcionales). */
+  exifFecha?: string; exifLat?: number; exifLng?: number;
 };
 
 /** POST /api/incidents como multipart/form-data, igual que el formulario del teléfono. */
@@ -84,6 +86,9 @@ async function alta(s: Sesion | null, d: DatosAlta, imagen?: Buffer | null, tipo
   f.append("category", d.category);
   f.append("severity", d.severity);
   f.append("description", d.description);
+  if (d.exifFecha !== undefined) f.append("exifFecha", d.exifFecha);
+  if (d.exifLat !== undefined) f.append("exifLat", String(d.exifLat));
+  if (d.exifLng !== undefined) f.append("exifLng", String(d.exifLng));
   return llamar(s, "POST", "/api/incidents", f);
 }
 
@@ -146,12 +151,40 @@ async function main() {
   caso("Un PNG se rechaza aunque se declare como JPEG (400)", r.status === 400 && r.data?.error === "IMAGEN_INVALIDA", r.data?.message);
   r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, null);
   caso("Un alta sin foto se rechaza (400)", r.status === 400 && r.data?.error === "DATOS_INCOMPLETOS", r.data?.message);
+
+  // --- B-01: reglas EXIF del documento (T03) ---
+  const haceHoras = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12, exifFecha: haceHoras(25) });
+  caso("Una foto con fecha EXIF de más de 24 h se rechaza (422)", r.status === 422 && r.data?.error === "FOTO_ANTIGUA", r.data?.message);
+  const lejos = alNorte(base, 80);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12, exifFecha: haceHoras(1), exifLat: lejos.lat, exifLng: lejos.lng });
+  caso("Una foto con coordenadas EXIF a 80 m del dispositivo se rechaza (422, PostGIS)", r.status === 422 && r.data?.error === "FOTO_LEJANA", r.data?.message);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12, exifLat: lejos.lat });
+  caso("Coordenadas EXIF incompletas se rechazan (400)", r.status === 400 && r.data?.error === "EXIF_INVALIDO", r.data?.message);
   const sinAltas = (await db.query("SELECT count(*)::int AS n FROM incidente WHERE hash_foto = $1", [foto])).rows[0].n;
   caso("Ninguna foto rechazada llega a crear el incidente", sinAltas === 0, `${sinAltas} incidentes`);
 
   r = await alta(nuevo, { ...datos, gpsAccuracy: 12 });
   const incId = r.data?.data?.id;
   caso("Alta válida: Sin verificar con 1 punto de confianza", r.status === 201 && r.data?.data?.trustPoints === 1 && r.data?.data?.status === "unverified", `incidente ${incId}`);
+  const sinExif = (await db.query("SELECT fecha_captura_foto FROM incidente WHERE incidente_id = $1", [incId])).rows[0];
+  caso("Una foto sin EXIF se acepta y deja fecha_captura_foto en NULL", sinExif?.fecha_captura_foto === null, String(sinExif?.fecha_captura_foto));
+
+  // D-16: una fecha EXIF sin desfase horario se toma en la hora de Argentina (UTC−3).
+  const capturaReal = new Date(Math.floor((Date.now() - 3_600_000) / 1000) * 1000);
+  const horaLocalArgentina = new Date(capturaReal.getTime() - 3 * 3_600_000).toISOString().slice(0, 19);
+  const cerca = alNorte(alNorte(base, 1000), 20);
+  r = await alta(nuevo, {
+    ...datos, geom: alNorte(base, 1000), photoHash: hashFoto("exif"), gpsAccuracy: 12,
+    exifFecha: horaLocalArgentina, exifLat: cerca.lat, exifLng: cerca.lng,
+  });
+  const conExif = r.status === 201
+    ? (await db.query("SELECT fecha_captura_foto FROM incidente WHERE incidente_id = $1", [r.data?.data?.id])).rows[0]
+    : null;
+  const guardada = conExif?.fecha_captura_foto ? new Date(conExif.fecha_captura_foto).getTime() : NaN;
+  caso("Una foto con EXIF reciente y a 20 m se acepta y guarda fecha_captura_foto (sin desfase: UTC−3)",
+    r.status === 201 && guardada === capturaReal.getTime(),
+    r.status === 201 ? `${horaLocalArgentina} → ${new Date(guardada).toISOString()}` : `HTTP ${r.status} ${r.data?.message ?? ""}`);
   r = await alta(nuevo, { ...datos, geom: alNorte(base, 500), category: "Luminaria", gpsAccuracy: 10 });
   caso("Una foto ya usada se rechaza por su huella SHA-256", r.status === 409 && r.data?.error === "FOTO_DUPLICADA", r.data?.message);
   r = await alta(nuevo, { ...datos, geom: alNorte({ lat: -34.6479, lng: -58.5618 }, 30), photoHash: hashFoto("b"), gpsAccuracy: 10 });

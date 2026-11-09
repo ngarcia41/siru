@@ -12,8 +12,9 @@
  *
  * Campos: foto (archivo JPEG), hashOriginal, lat, lng, gpsAccuracy, category,
  * severity, description y, si existen, exifFecha, exifLat, exifLng y
- * posicionTomadaEn. Los datos EXIF se validan desde la tarea T03 y la hora de
- * la posición, en el Sprint 4 (B-04).
+ * posicionTomadaEn. Con los datos EXIF se aplican las reglas del documento
+ * (fecha de 24 h como máximo, coordenadas a menos de 50 m: 422 FOTO_ANTIGUA o
+ * FOTO_LEJANA); la hora de la posición se usará en el Sprint 4 (B-04).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requerirSesion } from "@/lib/servidor/sesion";
@@ -63,6 +64,11 @@ export async function POST(req: NextRequest) {
       severidad,
       descripcion,
       hashFoto: hashOriginal,
+      exif: {
+        fecha: textoDe(f.get("exifFecha")) || null,
+        lat: numeroDe(f.get("exifLat")),
+        lng: numeroDe(f.get("exifLng")),
+      },
     }, ipDe(req));
     if (!r.ok) return error(r.status, r.codigo, r.mensaje, r.extra);
     return NextResponse.json({ success: true, data: r.datos }, { status: 201 });

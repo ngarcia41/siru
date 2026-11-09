@@ -51,7 +51,9 @@ export function fechaExifAIso(fecha: unknown, desfase: unknown): string | null {
   if (typeof fecha !== "string") return null;
   const m = fecha.trim().match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
   if (!m) return null;
-  const zona = typeof desfase === "string" && /^[+-]\d{2}:\d{2}$/.test(desfase.trim()) ? desfase.trim() : "-03:00";
+  const zona = typeof desfase === "string" && /^[+-]\d{2}:\d{2}$/.test(desfase.trim())
+    ? desfase.trim()
+    : IMAGEN.DESFASE_EXIF_PREDETERMINADO;
   const iso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${zona}`;
   return Number.isNaN(Date.parse(iso)) ? null : iso;
 }

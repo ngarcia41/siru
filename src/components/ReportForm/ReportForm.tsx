@@ -611,6 +611,9 @@ function StepPhoto({
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        // D-22: en el teléfono abre directamente la cámara trasera, porque el
+        // documento pide que la foto se tome en el momento del reporte.
+        capture="environment"
         style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -653,8 +656,8 @@ function StepPhoto({
           id="btn-select-photo"
         >
           <span className={styles.dropzoneIcon}>🖼️</span>
-          <span>Seleccionar foto del incidente</span>
-          <span className={styles.dropzoneHint}>Cualquier formato que abra tu navegador · Mín. 50 KB</span>
+          <span>Sacar la foto del incidente</span>
+          <span className={styles.dropzoneHint}>En el teléfono se abre la cámara · Mín. 50 KB</span>
         </button>
       )}
 

@@ -55,6 +55,10 @@ export const IMAGEN = {
   CALIDAD_JPEG_TELEFONO: 0.8,
   /** Tamaño máximo de la solicitud de alta, con la foto incluida (1,5 MB). */
   SOLICITUD_MAXIMA_BYTES: 1.5 * 1024 * 1024,
+  /** La fecha de captura EXIF no puede tener más de 24 horas (Reglas › imagen). */
+  ANTIGUEDAD_EXIF_MAXIMA_HORAS: 24,
+  /** Desfase que se asume si la fecha EXIF no informa su zona horaria: hora de Argentina (D-16). */
+  DESFASE_EXIF_PREDETERMINADO: "-03:00",
 } as const;
 
 export const CATEGORIAS =["Bache", "Luminaria", "Anegamiento", "Basura acumulada", "Otro"] as const;

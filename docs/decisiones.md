@@ -196,6 +196,19 @@ Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifi
 - Impacto en el documento: "repositorio privado" pasa a "privado durante el desarrollo y público desde la entrega",
   en la Arquitectura y en Respaldo › Código fuente.
 
+### D-22 · La foto se toma con la cámara (Implementación · Aprobada el 09/11/2026 · Sprint 3)
+- Documento: en las reglas de la imagen dice que la foto "se toma con la cámara en el momento del reporte".
+- Decisión: el selector de foto lleva `capture="environment"`. En el teléfono abre directamente la cámara trasera,
+  en lugar de ofrecer la galería. En la computadora el atributo no tiene efecto y se sigue eligiendo un archivo.
+- Dónde: el alta de incidentes (`ReportForm.tsx`, aplicado en la T03) y el informe de la resolución del vecino
+  (pantalla de la T12, que todavía no existe: se agrega al crearla).
+- Motivo: no es una función nueva, sino cumplir lo que el documento ya define. Además reduce el uso de fotos viejas
+  o ajenas, que los controles EXIF no siempre detectan.
+- Alternativa descartada: dejar abierta la galería, porque contradice el texto del documento.
+- Límite reconocido: es una indicación al navegador. Algunos navegadores igual ofrecen elegir un archivo, y una
+  solicitud armada a mano puede enviar cualquier foto; por eso siguen valiendo la huella, el EXIF y la confirmación presencial.
+- Impacto en el documento: ninguno.
+
 ## Brechas entre el documento y el código
 
 Son puntos que el documento describe como parte del sistema y que el código todavía no hace. Cada una se cierra de
@@ -204,7 +217,7 @@ registra la decisión.
 
 | ID | Qué dice el documento (sección) | Estado en el código | Plan |
 |---|---|---|---|
-| B-01 | Verificar la fecha EXIF (24 h como máximo) y las coordenadas EXIF (menos de 50 m) (Reglas › imagen) | `exif.ts` lo simula; `fecha_captura_foto` queda NULL | Sprint 3, T03 |
+| B-01 | Verificar la fecha EXIF (24 h como máximo) y las coordenadas EXIF (menos de 50 m) (Reglas › imagen) | Cerrada en la T03 (09/11/2026): el servidor aplica las dos reglas y guarda `fecha_captura_foto` | Sprint 3, T03 |
 | B-02 | Las imágenes se guardan en el almacenamiento de objetos (Arquitectura) | El servidor nunca recibe la imagen; solo guarda la huella | Sprint 3, T02 (con D-19) |
 | B-03 | Imagen privada, miniatura sin metadatos y recodificación en el servidor (Arquitectura, Seguridad, Privacidad) | No se guarda la imagen | Sprint 3, T04 (con D-19) |
 | B-04 | Posición con 2 minutos de antigüedad como máximo y velocidad de 150 km/h como máximo (Reglas › ubicación, R04) | No implementado | Sprint 4 (con D-08) |
