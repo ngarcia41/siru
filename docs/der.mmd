@@ -1,0 +1,99 @@
+erDiagram
+  USUARIO ||--o{ INCIDENTE : "registra"
+  USUARIO ||--o{ CONFIRMACION : "emite"
+  USUARIO ||--o{ RESOLUCION : "informa"
+  USUARIO |o--o{ RESOLUCION : "valida (operador)"
+  USUARIO ||--o{ HISTORIAL_CONTRASENA : "posee"
+  USUARIO ||--o{ AUDITORIA : "genera"
+  USUARIO ||--o{ SESION : "inicia"
+  CATEGORIA ||--o{ INCIDENTE : "clasifica"
+  SEVERIDAD ||--o{ INCIDENTE : "pondera"
+  INCIDENTE ||--o{ CONFIRMACION : "recibe"
+  INCIDENTE ||--o{ RESOLUCION : "tiene"
+  INCIDENTE |o--o{ AUDITORIA : "es objeto de"
+  USUARIO {
+    int UsuarioID PK
+    varchar Email UK
+    varchar HashContrasena
+    varchar Rol
+    varchar EstadoCuenta
+    smallint IntentosFallidos
+    timestamptz BloqueadoHasta
+    boolean DebeCambiarClave
+    timestamptz FechaCambioClave
+    timestamptz UltimoAcceso
+    timestamptz FechaRegistro
+    char TokenVerificacionHash
+    timestamptz TokenVerificacionVence
+  }
+  SESION {
+    uuid SesionID PK
+    int UsuarioID FK
+    timestamptz Creada
+    timestamptz UltimaActividad
+    timestamptz RevocadaEn
+    varchar DireccionIP
+  }
+  HISTORIAL_CONTRASENA {
+    int HistorialID PK
+    int UsuarioID FK
+    varchar HashContrasena
+    timestamptz FechaAlta
+  }
+  CATEGORIA {
+    smallint CategoriaID PK
+    varchar Nombre UK
+  }
+  SEVERIDAD {
+    smallint SeveridadID PK
+    varchar Nombre UK
+    numeric Peso
+    varchar Criterio
+  }
+  INCIDENTE {
+    int IncidenteID PK
+    int UsuarioID FK
+    smallint CategoriaID FK
+    smallint SeveridadID FK
+    varchar Descripcion
+    geometry Ubicacion "Point 4326"
+    numeric PrecisionGPS
+    varchar FotoRuta
+    char HashFoto UK
+    timestamptz FechaCapturaFoto
+    smallint PuntajeConfianza
+    varchar Estado
+    numeric IndicePrioridad
+    timestamptz FechaCreacion
+    timestamptz FechaActivacion
+    timestamptz FechaCierre
+  }
+  CONFIRMACION {
+    int ConfirmacionID PK
+    int IncidenteID FK
+    int UsuarioID FK
+    numeric DistanciaMetros
+    numeric PrecisionGPS
+    timestamptz FechaConfirmacion
+  }
+  RESOLUCION {
+    int ResolucionID PK
+    int IncidenteID FK
+    int InformadaPor FK
+    timestamptz FechaInforme
+    varchar EvidenciaRuta
+    char HashEvidencia
+    varchar Observacion
+    int ValidadaPor FK
+    timestamptz FechaValidacion
+    varchar Resultado
+  }
+  AUDITORIA {
+    bigint AuditoriaID PK
+    int UsuarioID FK
+    int IncidenteID FK
+    varchar Accion
+    jsonb Detalle
+    varchar DireccionIP
+    timestamptz FechaHora
+  }
