@@ -136,7 +136,7 @@ export default function ReportForm({
    */
   const captureGPS = useCallback(() => {
     if (!navigator.geolocation) {
-      setGpsError("Tu navegador no soporta geolocalización. Por favor, usa Chrome o Firefox actualizado.");
+      setGpsError("Tu navegador no permite obtener la ubicación. Usá Chrome o Firefox actualizados.");
       return;
     }
 
@@ -171,13 +171,13 @@ export default function ReportForm({
         setGpsLoading(false);
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            setGpsError("Permiso de ubicación denegado. Habilítalo en la configuración del navegador para reportar incidentes.");
+            setGpsError("No diste permiso para usar la ubicación. Habilitalo en la configuración del navegador para reportar incidentes.");
             break;
           case error.POSITION_UNAVAILABLE:
-            setGpsError("Ubicación no disponible. Asegúrate de tener GPS activo.");
+            setGpsError("La ubicación no está disponible. Asegurate de tener el GPS activado.");
             break;
           case error.TIMEOUT:
-            setGpsError("Tiempo de espera agotado. Intenta nuevamente en un lugar con mejor señal.");
+            setGpsError("Se agotó el tiempo de espera. Intentá de nuevo en un lugar con mejor señal.");
             break;
         }
       },
@@ -588,7 +588,7 @@ function StepDetails({
           id="textarea-description"
           value={description}
           onChange={(e) => onDescriptionChange(e.target.value.slice(0, MAX_DESCRIPCION))}
-          placeholder="Describe el incidente con detalle: ¿qué ocurre? ¿desde cuándo? ¿qué riesgos genera?"
+          placeholder="Describí el incidente con detalle: ¿qué pasa?, ¿desde cuándo?, ¿qué riesgos genera?"
           rows={4}
           className={styles.textarea}
         />
@@ -893,7 +893,7 @@ function GeofenceAlertPanel({
       </div>
 
       <p className={styles.geofenceQuestion}>
-        ¿Deseas confirmar la existencia de este incidente?
+        ¿Querés confirmar que este incidente existe?
         <br />
         <small>Tu confirmación suma 1 punto de confianza al reporte existente.</small>
       </p>

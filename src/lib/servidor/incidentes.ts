@@ -307,7 +307,7 @@ export async function confirmarIncidente(
       ok: true,
       datos: (await obtenerIncidente(incidenteId, c))!,
       mensaje: activado
-        ? `¡Incidente validado! Alcanzó ${UMBRAL_ACTIVACION} puntos de confianza y ahora está Activo.`
+        ? `¡Incidente activado! Alcanzó ${UMBRAL_ACTIVACION} puntos de confianza y ahora está Activo.`
         : `Sumaste 1 punto de confianza. Total: ${nuevo.puntaje_confianza} puntos.`,
     };
   });
