@@ -59,6 +59,14 @@ export const IMAGEN = {
   ANTIGUEDAD_EXIF_MAXIMA_HORAS: 24,
   /** Desfase que se asume si la fecha EXIF no informa su zona horaria: hora de Argentina (D-16). */
   DESFASE_EXIF_PREDETERMINADO: "-03:00",
+  /** Tolerancia para una fecha EXIF posterior a la hora del servidor (reloj del teléfono adelantado, D-23). */
+  TOLERANCIA_FECHA_FUTURA_MINUTOS: 10,
+  /** Versiones que guarda el servidor, siempre sin metadatos (D-14). */
+  CALIDAD_FOTO_SERVIDOR: 80,
+  MINIATURA_LADO_MAYOR_PX: 480,
+  CALIDAD_MINIATURA: 70,
+  /** Caché de las imágenes servidas: la clave es la huella, así que el contenido nunca cambia (7 días). */
+  CACHE_SEGUNDOS: 604800,
 } as const;
 
 export const CATEGORIAS =["Bache", "Luminaria", "Anegamiento", "Basura acumulada", "Otro"] as const;

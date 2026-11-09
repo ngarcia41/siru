@@ -16,7 +16,7 @@
  */
 import "dotenv/config";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "pg";
 
@@ -24,6 +24,8 @@ const BASE_PERMITIDA = "siru_prueba";
 const PUERTO = 3001;
 const URL_SERVIDOR = `http://localhost:${PUERTO}`;
 const ESPERA_SERVIDOR_MS = 60_000;
+/** Carpeta de imágenes de las pruebas: se vacía en cada corrida, como la base. */
+const CARPETA_IMAGENES = "almacenamiento-prueba";
 
 const TSX = join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
 const NEXT = join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
@@ -47,7 +49,8 @@ function entornoDePrueba(): NodeJS.ProcessEnv {
   }
   // Todos los procesos hijos (migración, semilla, servidor y pruebas) leen DATABASE_URL.
   // dotenv y Next.js no pisan una variable que ya existe en el entorno.
-  return { ...process.env, DATABASE_URL: url };
+  // Las imágenes de las pruebas van a su propia carpeta, separada de la de desarrollo.
+  return { ...process.env, DATABASE_URL: url, ALMACENAMIENTO_LOCAL: CARPETA_IMAGENES };
 }
 
 /** Borra y vuelve a crear la base de prueba, conectándose a la base "postgres" del servidor. */
@@ -111,8 +114,9 @@ async function main() {
     throw new Error(`El puerto ${PUERTO} está ocupado. Cerrá el proceso que lo usa y volvé a intentar.`);
   }
 
-  console.log(`== Recreando la base ${BASE_PERMITIDA}`);
+  console.log(`== Recreando la base ${BASE_PERMITIDA} y vaciando ${CARPETA_IMAGENES}/`);
   await recrearBase(env.DATABASE_URL!);
+  rmSync(CARPETA_IMAGENES, { recursive: true, force: true });
   paso("Migración", [TSX, "scripts/migrar.ts"], env);
   paso("Semilla", [TSX, "scripts/semilla.ts"], env);
   paso("Compilación", [NEXT, "build"], env);

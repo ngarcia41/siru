@@ -38,7 +38,7 @@ para que el cierre quede registrado de forma confiable.
 | Técnica | T01 | Correr las pruebas sobre una base aislada con `npm run prueba` (D-17) | Alta | 0,5 día | Hecha (09/11/2026) |
 | HU-05 | T02 | Reducir la foto en el teléfono (1600 px, sin metadatos), calcular allí la huella y el EXIF del original, y subirla al servidor (B-02, D-19) | Alta | 1,5 días | Hecha (09/11/2026) |
 | HU-05 | T03 | Controles EXIF en el servidor (fecha de 24 h como máximo, coordenadas a menos de 50 m) y `fecha_captura_foto` (B-01); cámara en el selector de foto (D-22) | Media | 0,5 día | Hecha (09/11/2026) |
-| HU-05 | T04 | Recodificar en el servidor, guardar la foto privada y la miniatura de 480 px, y servirlas por una ruta autenticada (B-03, D-14) | Alta | 1 día | Pendiente |
+| HU-05 | T04 | Recodificar en el servidor, guardar la foto privada y la miniatura de 480 px, y servirlas por una ruta autenticada (B-03, D-14); fecha EXIF futura (D-23) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-04 | T05 | Calcular el índice de prioridad al activar y con cada confirmación (D-06) | Alta | 1 día | Pendiente |
 | HU-04 | T06 | Tarea diaria de las 00:30 que recalcula los índices (D-07) | Alta | 0,5 día | Pendiente |
 | HU-04 | T07 | Reclasificar la severidad y la categoría (operador), con recálculo y auditoría (D-13) | Alta | 1 día | Pendiente |

@@ -35,6 +35,10 @@ export interface Incident {
   category: IncidentCategory;
   description: string;
   photoHash: string;
+  /** Miniatura de 480 px, para cualquier usuario autenticado (null si el incidente no tiene foto guardada). */
+  miniaturaUrl: string | null;
+  /** Foto completa privada: la ruta solo la entrega al operador. */
+  fotoUrl: string | null;
   exifData: ExifMetadata | null;
   gpsAccuracy: number | null;
   trustPoints: number;

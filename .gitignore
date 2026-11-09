@@ -3,4 +3,5 @@ node_modules/
 .env
 *.log
 almacenamiento/
+almacenamiento-prueba/
 *.tsbuildinfo

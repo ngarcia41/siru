@@ -113,7 +113,7 @@ La tabla de perfiles permite al operador reclasificar la categoría y la severid
 un incidente abierto de esa categoría a menos de 50 m, se rechaza con 409 y se muestra el existente, para que el
 operador desestime el duplicado. El cambio de categoría no recalcula el IP; el de severidad sí.
 
-### D-14 · Almacenamiento de imágenes (Implementación · Aprobada el 09/11/2026 · Sprint 3)
+### D-14 · Almacenamiento de imágenes (Implementación · Implementada el 09/11/2026 en la T04, versión local; Spaces en el Sprint 4 · Sprint 3)
 - Se define una interfaz de almacenamiento con dos implementaciones:
   - local, para desarrollo, en `almacenamiento/`, fuera de `public/` y de git;
   - Spaces, compatible con S3, para producción. Se implementa en el Sprint 4.
@@ -126,7 +126,7 @@ operador desestime el duplicado. El cambio de categoría no recalcula el IP; el 
   - la foto privada, solo para el operador. Esto coincide con el documento: "se publica una miniatura".
 - Detalle completo en `imagenes.md`.
 
-### D-15 · Dependencias nuevas (Implementación · Aprobada el 09/11/2026 · Sprint 3)
+### D-15 · Dependencias nuevas (Implementación · Implementada el 09/11/2026 · Sprint 3)
 - `sharp`, en el servidor: decodifica y recodifica la imagen, quita los metadatos y genera la miniatura.
 - `exifr`, en el navegador: lee la fecha y las coordenadas EXIF del original antes de reducirlo.
 - Impacto en el documento: agregarlas a la tabla "Herramientas de desarrollo", con su referencia APA.
@@ -144,7 +144,7 @@ Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifi
 
 ## Imágenes (09/11/2026; detalle en `imagenes.md`)
 
-### D-19 · Achicar la foto en el teléfono (Cambio · Aprobada el 09/11/2026 · Sprint 3)
+### D-19 · Achicar la foto en el teléfono (Cambio · Implementada el 09/11/2026 en las T02 a T04 · Sprint 3)
 - Documento: en la arquitectura dice "el original queda privado y se publica una miniatura sin metadatos", y en el
   diccionario `FotoRuta` es la "ruta de la imagen original".
 - Decisión:
@@ -209,6 +209,17 @@ Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifi
   solicitud armada a mano puede enviar cualquier foto; por eso siguen valiendo la huella, el EXIF y la confirmación presencial.
 - Impacto en el documento: ninguno.
 
+### D-23 · Fecha EXIF en el futuro (Interpretación · Implementada el 09/11/2026 en la T04 · Sprint 3)
+- Documento: dice que la fecha de captura EXIF "no puede superar las 24 h", pero no dice qué pasa con una fecha
+  posterior a la hora actual.
+- Decisión: se rechaza una fecha EXIF más de 10 minutos posterior a la hora del servidor, con 422 `FOTO_FECHA_FUTURA`
+  y un mensaje que pide revisar la fecha y hora del teléfono. La tolerancia está en `reglas.ts`
+  (`IMAGEN.TOLERANCIA_FECHA_FUTURA_MINUTOS`).
+- Motivo: sin este control, adelantar la fecha de la foto permitiría esquivar la regla de las 24 h. Los 10 minutos
+  toleran un reloj de teléfono un poco desfasado.
+- Alternativa descartada: aceptarla, porque deja abierta esa forma de evitar el control.
+- Impacto en el documento: una oración en "Controles sobre la imagen".
+
 ## Brechas entre el documento y el código
 
 Son puntos que el documento describe como parte del sistema y que el código todavía no hace. Cada una se cierra de
@@ -218,8 +229,8 @@ registra la decisión.
 | ID | Qué dice el documento (sección) | Estado en el código | Plan |
 |---|---|---|---|
 | B-01 | Verificar la fecha EXIF (24 h como máximo) y las coordenadas EXIF (menos de 50 m) (Reglas › imagen) | Cerrada en la T03 (09/11/2026): el servidor aplica las dos reglas y guarda `fecha_captura_foto` | Sprint 3, T03 |
-| B-02 | Las imágenes se guardan en el almacenamiento de objetos (Arquitectura) | El servidor nunca recibe la imagen; solo guarda la huella | Sprint 3, T02 (con D-19) |
-| B-03 | Imagen privada, miniatura sin metadatos y recodificación en el servidor (Arquitectura, Seguridad, Privacidad) | No se guarda la imagen | Sprint 3, T04 (con D-19) |
+| B-02 | Las imágenes se guardan en el almacenamiento de objetos (Arquitectura) | Cerrada en las T02 y T04 (09/11/2026), con almacenamiento local; Spaces queda para el Sprint 4 | Sprint 3, T02 (con D-19) |
+| B-03 | Imagen privada, miniatura sin metadatos y recodificación en el servidor (Arquitectura, Seguridad, Privacidad) | Cerrada en la T04 (09/11/2026): foto privada y miniatura recodificadas sin metadatos, por una ruta autenticada | Sprint 3, T04 (con D-19) |
 | B-04 | Posición con 2 minutos de antigüedad como máximo y velocidad de 150 km/h como máximo (Reglas › ubicación, R04) | No implementado | Sprint 4 (con D-08) |
 | B-05 | Coordenadas de confirmación por 90 días (Privacidad, R10, Anexo 4) | No se guardan | Sprint 4 (D-08) |
 | B-06 | El vecino restablece su contraseña por correo tras 3 bloqueos en 24 h (Seguridad › Bloqueo) | Solo hay blanqueo por el administrador | Sprint 4 (requiere B-07) |

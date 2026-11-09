@@ -11,6 +11,7 @@ import type { PoolClient } from "pg";
 import { consulta, transaccion } from "./db";
 import { auditar } from "./auditoria";
 import { validarExif, type ExifDeclarado } from "./imagen";
+import { almacenamiento, claveFoto, claveMiniatura, miniaturaDe } from "./almacenamiento";
 import type { Incident, IncidentCategory, IncidentSeverity, IncidentStatus } from "../types";
 import {
   CATEGORIAS, LIMITE_CONFIRMACIONES_24H, LIMITE_REPORTES_24H, PRECISION_GPS_MAXIMA, RADIO_METROS, UMBRAL_ACTIVACION,
@@ -31,7 +32,7 @@ function punto(lngParam: number, latParam: number) {
 
 const SELECT_INCIDENTE = `
   SELECT i.incidente_id, i.usuario_id, c.nombre AS categoria, s.nombre AS severidad, i.descripcion,
-         ST_Y(i.ubicacion) AS lat, ST_X(i.ubicacion) AS lng, i.precision_gps, i.hash_foto,
+         ST_Y(i.ubicacion) AS lat, ST_X(i.ubicacion) AS lng, i.precision_gps, i.hash_foto, i.foto_ruta,
          i.puntaje_confianza, i.estado, i.fecha_creacion, i.fecha_cierre,
          COALESCE((SELECT array_agg(cf.usuario_id ORDER BY cf.fecha_confirmacion)
                      FROM confirmacion cf WHERE cf.incidente_id = i.incidente_id), '{}') AS confirmadores
@@ -47,6 +48,9 @@ export function aDto(f: any): Incident {
     category: f.categoria as IncidentCategory,
     description: f.descripcion,
     photoHash: f.hash_foto,
+    // Las imágenes se piden a la ruta autenticada; la foto privada solo la entrega al operador.
+    miniaturaUrl: f.foto_ruta ? `/api/imagenes/${miniaturaDe(f.foto_ruta)}` : null,
+    fotoUrl: f.foto_ruta ? `/api/imagenes/${f.foto_ruta}` : null,
     exifData: null,
     gpsAccuracy: f.precision_gps === null ? null : Number(f.precision_gps),
     trustPoints: Number(f.puntaje_confianza),
@@ -99,6 +103,8 @@ export async function crearIncidente(
   d: {
     lat: number; lng: number; precision: unknown; categoria: string; severidad: string; descripcion: string;
     hashFoto: string; exif: ExifDeclarado;
+    /** Versiones recodificadas por el servidor (T04), sin metadatos. */
+    imagen: { foto: Buffer; miniatura: Buffer };
   },
   ip: string | null
 ): Promise<Resultado<Incident>> {
@@ -148,12 +154,21 @@ export async function crearIncidente(
         { nearbyIncident: existente, distanceMeters: distancia });
     }
 
+    // B-02 y B-03: se guardan la foto privada y la miniatura después de todas las validaciones
+    // y antes del INSERT. Si falla la escritura, la transacción se cancela y no queda un
+    // incidente sin foto; un archivo que quede de un intento cancelado no molesta, porque su
+    // clave es la huella y se reescribe igual si se vuelve a subir.
+    const fotoRuta = claveFoto(d.hashFoto);
+    await almacenamiento.guardar(fotoRuta, d.imagen.foto);
+    await almacenamiento.guardar(claveMiniatura(d.hashFoto), d.imagen.miniatura);
+
     const { rows } = await c.query(
       `INSERT INTO incidente (usuario_id, categoria_id, severidad_id, descripcion, ubicacion, precision_gps, hash_foto,
-                             fecha_captura_foto, puntaje_confianza)
-       VALUES ($3, (SELECT categoria_id FROM categoria WHERE nombre = $4), $5, $6, ${punto(1, 2)}, $7, $8, $9, 1)
+                             foto_ruta, fecha_captura_foto, puntaje_confianza)
+       VALUES ($3, (SELECT categoria_id FROM categoria WHERE nombre = $4), $5, $6, ${punto(1, 2)}, $7, $8, $9, $10, 1)
        RETURNING incidente_id`,
-      [d.lng, d.lat, usuarioId, d.categoria, severidadId, descripcion, d.precision, d.hashFoto, exif.datos.fechaCaptura]
+      [d.lng, d.lat, usuarioId, d.categoria, severidadId, descripcion, d.precision, d.hashFoto, fotoRuta,
+        exif.datos.fechaCaptura]
     );
     const id = rows[0].incidente_id as number;
     await auditar("ALTA_INCIDENTE", {

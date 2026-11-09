@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       severidad,
       descripcion,
       hashFoto: hashOriginal,
+      imagen: { foto: imagen.datos.foto, miniatura: imagen.datos.miniatura },
       exif: {
         fecha: textoDe(f.get("exifFecha")) || null,
         lat: numeroDe(f.get("exifLat")),

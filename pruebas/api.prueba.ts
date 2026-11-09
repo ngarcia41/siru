@@ -65,6 +65,18 @@ async function imagenDePrueba(ancho = 1600, alto = 1200, formato: "jpeg" | "png"
   return formato === "png" ? img.png().toBuffer() : img.jpeg({ quality: 80 }).toBuffer();
 }
 
+/** JPEG de 1600 px que trae metadatos EXIF, para comprobar que el servidor los descarta (B-03). */
+async function imagenConExif(): Promise<Buffer> {
+  const base = await imagenDePrueba();
+  return sharp(base).withExif({ IFD0: { Copyright: "SIRU prueba", Make: "Prueba" } }).jpeg({ quality: 80 }).toBuffer();
+}
+
+/** GET de una imagen: devuelve el estado, los encabezados y los bytes. */
+async function pedirImagen(s: Sesion | null, ruta: string) {
+  const res = await fetch(BASE + ruta, { headers: s?.cookie ? { Cookie: s.cookie } : {} });
+  return { status: res.status, headers: res.headers, datos: Buffer.from(await res.arrayBuffer()) };
+}
+
 type DatosAlta = {
   geom: { lat: number; lng: number }; gpsAccuracy: number; category: string; severity: string;
   description: string; photoHash: string;
@@ -151,6 +163,9 @@ async function main() {
   caso("Un PNG se rechaza aunque se declare como JPEG (400)", r.status === 400 && r.data?.error === "IMAGEN_INVALIDA", r.data?.message);
   r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, null);
   caso("Un alta sin foto se rechaza (400)", r.status === 400 && r.data?.error === "DATOS_INCOMPLETOS", r.data?.message);
+  const completa = await imagenDePrueba();
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, completa.subarray(0, Math.floor(completa.length / 2)));
+  caso("Un JPEG dañado que sharp no puede decodificar se rechaza (400)", r.status === 400 && r.data?.error === "IMAGEN_INVALIDA", r.data?.message);
 
   // --- B-01: reglas EXIF del documento (T03) ---
   const haceHoras = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
@@ -161,6 +176,8 @@ async function main() {
   caso("Una foto con coordenadas EXIF a 80 m del dispositivo se rechaza (422, PostGIS)", r.status === 422 && r.data?.error === "FOTO_LEJANA", r.data?.message);
   r = await alta(nuevo, { ...datos, gpsAccuracy: 12, exifLat: lejos.lat });
   caso("Coordenadas EXIF incompletas se rechazan (400)", r.status === 400 && r.data?.error === "EXIF_INVALIDO", r.data?.message);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12, exifFecha: haceHoras(-1) });
+  caso("Una foto con fecha EXIF una hora en el futuro se rechaza (422, D-23)", r.status === 422 && r.data?.error === "FOTO_FECHA_FUTURA", r.data?.message);
   const sinAltas = (await db.query("SELECT count(*)::int AS n FROM incidente WHERE hash_foto = $1", [foto])).rows[0].n;
   caso("Ninguna foto rechazada llega a crear el incidente", sinAltas === 0, `${sinAltas} incidentes`);
 
@@ -174,10 +191,13 @@ async function main() {
   const capturaReal = new Date(Math.floor((Date.now() - 3_600_000) / 1000) * 1000);
   const horaLocalArgentina = new Date(capturaReal.getTime() - 3 * 3_600_000).toISOString().slice(0, 19);
   const cerca = alNorte(alNorte(base, 1000), 20);
+  const conMetadatos = await imagenConExif();
+  const hashConExif = hashFoto("exif");
   r = await alta(nuevo, {
-    ...datos, geom: alNorte(base, 1000), photoHash: hashFoto("exif"), gpsAccuracy: 12,
+    ...datos, geom: alNorte(base, 1000), photoHash: hashConExif, gpsAccuracy: 12,
     exifFecha: horaLocalArgentina, exifLat: cerca.lat, exifLng: cerca.lng,
-  });
+  }, conMetadatos);
+  const incConFoto = r.data?.data?.id;
   const conExif = r.status === 201
     ? (await db.query("SELECT fecha_captura_foto FROM incidente WHERE incidente_id = $1", [r.data?.data?.id])).rows[0]
     : null;
@@ -185,6 +205,8 @@ async function main() {
   caso("Una foto con EXIF reciente y a 20 m se acepta y guarda fecha_captura_foto (sin desfase: UTC−3)",
     r.status === 201 && guardada === capturaReal.getTime(),
     r.status === 201 ? `${horaLocalArgentina} → ${new Date(guardada).toISOString()}` : `HTTP ${r.status} ${r.data?.message ?? ""}`);
+  r = await alta(nuevo, { ...datos, geom: alNorte(base, 1500), photoHash: hashFoto("tolerancia"), gpsAccuracy: 12, exifFecha: haceHoras(-5 / 60) });
+  caso("Una fecha EXIF 5 minutos adelantada se acepta (tolerancia de 10 min, D-23)", r.status === 201, `HTTP ${r.status} ${r.data?.message ?? ""}`);
   r = await alta(nuevo, { ...datos, geom: alNorte(base, 500), category: "Luminaria", gpsAccuracy: 10 });
   caso("Una foto ya usada se rechaza por su huella SHA-256", r.status === 409 && r.data?.error === "FOTO_DUPLICADA", r.data?.message);
   r = await alta(nuevo, { ...datos, geom: alNorte({ lat: -34.6479, lng: -58.5618 }, 30), photoHash: hashFoto("b"), gpsAccuracy: 10 });
@@ -226,6 +248,41 @@ async function main() {
   caso("No acepta repetir una de las últimas 3 claves", r.status === 400 && r.data?.error === "CLAVE_REPETIDA", r.data?.message);
   r = await llamar(op, "POST", "/api/auth/cambiar-clave", { actual: CLAVE_OPERADOR_TEMPORAL, nueva: "Gestion#Barrio27" });
   caso("Cambio de clave válido", r.status === 200, r.data?.message);
+
+  // --- B-03: foto privada, miniatura sin metadatos y ruta autenticada (T04) ---
+  const filaFoto = (await db.query("SELECT foto_ruta FROM incidente WHERE incidente_id = $1", [incConFoto])).rows[0];
+  caso("foto_ruta guarda la clave de la foto privada", filaFoto?.foto_ruta === `fotos/${hashConExif}.jpg`, filaFoto?.foto_ruta);
+  const original = await sharp(conMetadatos).metadata();
+  r = await llamar(v1, "GET", "/api/incidents");
+  const dto = (r.data?.data ?? []).find((x: { id: string }) => x.id === String(incConFoto));
+  caso("La API informa la miniatura y la foto por la ruta autenticada",
+    dto?.miniaturaUrl === `/api/imagenes/miniaturas/${hashConExif}.jpg` && dto?.fotoUrl === `/api/imagenes/fotos/${hashConExif}.jpg`, dto?.miniaturaUrl);
+  let img = await pedirImagen(null, `/api/imagenes/miniaturas/${hashConExif}.jpg`);
+  caso("Sin sesión no se puede leer una imagen (401)", img.status === 401, `HTTP ${img.status}`);
+  img = await pedirImagen(v1, `/api/imagenes/fotos/${hashConExif}.jpg`);
+  caso("Un vecino no puede ver la foto privada (403)", img.status === 403, `HTTP ${img.status}`);
+  img = await pedirImagen(v1, `/api/imagenes/miniaturas/${hashConExif}.jpg`);
+  const metaMini = img.status === 200 ? await sharp(img.datos).metadata() : null;
+  caso("Un vecino ve la miniatura, con caché privada, larga e inmutable",
+    img.status === 200 && img.headers.get("content-type") === "image/jpeg"
+      && img.headers.get("cache-control") === "private, max-age=604800, immutable",
+    `HTTP ${img.status} · ${img.headers.get("cache-control")}`);
+  caso("La miniatura mide 480 px como máximo y no conserva EXIF",
+    !!metaMini && Math.max(metaMini.width ?? 0, metaMini.height ?? 0) <= 480 && !metaMini.exif,
+    `${metaMini?.width} × ${metaMini?.height} · EXIF del original: ${original.exif ? "sí" : "no"}, de la miniatura: ${metaMini?.exif ? "sí" : "no"}`);
+  img = await pedirImagen(op, `/api/imagenes/fotos/${hashConExif}.jpg`);
+  const metaFoto = img.status === 200 ? await sharp(img.datos).metadata() : null;
+  caso("El operador ve la foto privada: 1600 px como máximo y sin EXIF",
+    !!original.exif && !!metaFoto && Math.max(metaFoto.width ?? 0, metaFoto.height ?? 0) <= 1600 && !metaFoto.exif,
+    `HTTP ${img.status} · ${metaFoto?.width} × ${metaFoto?.height}`);
+  const malas = await Promise.all([
+    pedirImagen(op, "/api/imagenes/fotos/..%2F..%2F.env"),
+    pedirImagen(op, `/api/imagenes/otra/${hashConExif}.jpg`),
+    pedirImagen(op, `/api/imagenes/fotos/${hashConExif.slice(0, 63)}.jpg`),
+  ]);
+  caso("Una clave con otro formato se rechaza sin tocar el disco (400)", malas.every((m) => m.status === 400), malas.map((m) => m.status).join(", "));
+  img = await pedirImagen(op, `/api/imagenes/fotos/${"0".repeat(64)}.jpg`);
+  caso("Una imagen inexistente responde 404", img.status === 404, `HTTP ${img.status}`);
   r = await alta(op, { ...datos, geom: alNorte(base, 2000), photoHash: hashFoto("d"), gpsAccuracy: 10 });
   caso("Un operador no registra incidentes", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
   r = await llamar(op, "PATCH", `/api/incidents/${incId}`, { action: "resolve", observacion: "Bacheo verificado en el lugar." });

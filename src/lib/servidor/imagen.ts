@@ -9,9 +9,13 @@
  *   - tamaño: el lado mayor tiene que estar entre 800 y 1600 px. El límite de
  *     1,5 MB de la solicitud se controla antes, en la ruta.
  *
+ * Después la recodifica (T04, B-03): con sharp genera la foto privada (hasta
+ * 1600 px) y la miniatura (480 px), ambas en JPEG y SIN METADATOS. sharp no
+ * copia el EXIF salvo que se lo pida con withMetadata(), que acá no se usa;
+ * rotate() sin argumentos aplica antes la orientación EXIF, si la hubiera.
+ *
  * Además aplica las reglas EXIF del documento (T03, B-01) sobre los datos del
- * original que informa el teléfono, porque la versión reducida ya no los trae
- * (D-19). Guardar la foto privada y la miniatura corresponde a la tarea T04.
+ * original que informa el teléfono, porque la versión reducida ya no los trae (D-19).
  */
 import sharp from "sharp";
 import type { PoolClient } from "pg";
@@ -19,9 +23,21 @@ import { IMAGEN, RADIO_METROS } from "../reglas";
 import type { Resultado } from "./incidentes";
 
 export interface ImagenValida {
-  datos: Buffer;
+  /** Versión privada, recodificada y sin metadatos (fotos/<hash>.jpg). */
+  foto: Buffer;
+  /** Miniatura pública para usuarios autenticados (miniaturas/<hash>.jpg). */
+  miniatura: Buffer;
   ancho: number;
   alto: number;
+}
+
+/** Recodifica la imagen con un lado mayor máximo, en JPEG y sin metadatos. */
+function recodificar(datos: Buffer, ladoMayor: number, calidad: number): Promise<Buffer> {
+  return sharp(datos)
+    .rotate()
+    .resize({ width: ladoMayor, height: ladoMayor, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: calidad, mozjpeg: true })
+    .toBuffer();
 }
 
 const INVALIDA = "La foto no es válida. Sacala de nuevo desde el formulario de SIRU.";
@@ -56,7 +72,18 @@ export async function validarImagenSubida(archivo: File): Promise<Resultado<Imag
       mensaje: `La foto debe tener entre ${IMAGEN.LADO_MAYOR_MINIMO_PX} y ${IMAGEN.LADO_MAYOR_MAXIMO_PX} px en su lado mayor (tiene ${ladoMayor} px).`,
     };
   }
-  return { ok: true, datos: { datos, ancho, alto } };
+
+  try {
+    // Decodificar y volver a codificar descarta cualquier contenido que no sea la imagen.
+    const [foto, miniatura] = await Promise.all([
+      recodificar(datos, IMAGEN.LADO_MAYOR_MAXIMO_PX, IMAGEN.CALIDAD_FOTO_SERVIDOR),
+      recodificar(datos, IMAGEN.MINIATURA_LADO_MAYOR_PX, IMAGEN.CALIDAD_MINIATURA),
+    ]);
+    return { ok: true, datos: { foto, miniatura, ancho, alto } };
+  } catch {
+    // sharp leyó el encabezado pero no pudo decodificar la imagen (archivo dañado o truncado).
+    return { ok: false, status: 400, codigo: "IMAGEN_INVALIDA", mensaje: INVALIDA };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +128,13 @@ export async function validarExif(
       return { ok: false, status: 400, codigo: "EXIF_INVALIDO", mensaje: "La fecha de la foto no tiene un formato válido." };
     }
     const horas = (Date.now() - fechaCaptura.getTime()) / 3_600_000;
+    // D-23: una fecha posterior a la hora del servidor (con 10 minutos de tolerancia) no es creíble.
+    if (-horas * 60 > IMAGEN.TOLERANCIA_FECHA_FUTURA_MINUTOS) {
+      return {
+        ok: false, status: 422, codigo: "FOTO_FECHA_FUTURA",
+        mensaje: "La fecha de la foto es posterior a la hora actual. Revisá la fecha y hora del teléfono y sacá la foto de nuevo.",
+      };
+    }
     if (horas > IMAGEN.ANTIGUEDAD_EXIF_MAXIMA_HORAS) {
       return {
         ok: false, status: 422, codigo: "FOTO_ANTIGUA",

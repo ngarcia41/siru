@@ -79,13 +79,23 @@ const ETIQUETA_ESTADO: Record<string, string> = {
   dismissed: "Desestimado",
 };
 
-/** HTML del popup de un incidente */
+/**
+ * HTML del popup de un incidente. Leaflet inserta este HTML recién cuando se
+ * abre el popup, así que la miniatura se descarga solo al abrir el incidente:
+ * el mapa en sí no carga fotos (imagenes.md).
+ */
 function popupHtml(incident: Incident): string {
   const trustColor =
     incident.status === "active" ? "#22c55e" : incident.status === "resolved" ? "#6b7280" : "#94a3b8";
   const desc = incident.description.length > 80 ? `${incident.description.slice(0, 80)}…` : incident.description;
+  const miniatura = incident.miniaturaUrl
+    ? `<img src="${escapar(incident.miniaturaUrl)}" alt="Foto del incidente" loading="lazy" width="240" height="180"
+         style="display:block; width:100%; max-width:240px; height:auto; aspect-ratio:4/3; object-fit:cover;
+                border-radius:8px; margin-bottom:8px; background:#21262d;" />`
+    : "";
   return `
     <div style="padding:12px; min-width:200px; font-family:'Inter',sans-serif;">
+      ${miniatura}
       <div style="font-weight:700; font-size:14px; margin-bottom:4px; color:#f0f6fc;">${escapar(incident.category)} · N.° ${escapar(incident.id)}</div>
       <div style="font-size:12px; color:#8b949e; margin-bottom:8px;">${escapar(incident.address || "Ramos Mejía")}</div>
       <div style="font-size:12px; color:#c9d1d9; margin-bottom:10px; line-height:1.5;">${escapar(desc)}</div>
