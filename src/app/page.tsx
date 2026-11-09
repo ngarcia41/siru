@@ -2,9 +2,8 @@
  * SIRU — app/page.tsx
  * Página de inicio — Landing y acceso al dashboard.
  *
- * En el prototipo académico, esta página sirve como splash screen
- * con acceso directo al dashboard (autenticación simplificada para demo).
- * En producción, aquí iría el flujo completo de Login/Registro.
+ * Presenta el sistema y lleva al ingreso. El mapa requiere iniciar sesión
+ * (vecino u operador) desde el Sprint 2.
  */
 "use client";
 
@@ -18,7 +17,7 @@ export default function LandingPage() {
 
   const handleEnter = () => {
     setEntering(true);
-    setTimeout(() => router.push("/dashboard"), 600);
+    setTimeout(() => router.push("/ingresar"), 300);
   };
 
   return (
@@ -54,9 +53,9 @@ export default function LandingPage() {
         {/* Features */}
         <div className={styles.features}>
           <FeatureChip icon="📍" label="Geolocalización GPS" />
-          <FeatureChip icon="🛡" label="Geofencing 50m" />
+          <FeatureChip icon="🛡" label="Validación a 50 m" />
           <FeatureChip icon="★" label="Puntos de Confianza" />
-          <FeatureChip icon="🔥" label="Heatmaps Analíticos" />
+          <FeatureChip icon="🔥" label="Mapa de calor" />
         </div>
 
         {/* CTA */}
@@ -67,16 +66,16 @@ export default function LandingPage() {
           id="btn-enter-app"
         >
           {entering ? (
-            <><span className={styles.spinner} />Cargando mapa...</>
+            <><span className={styles.spinner} />Abriendo…</>
           ) : (
-            <>Acceder al Dashboard →</>
+            <>Ingresar →</>
           )}
         </button>
 
         {/* Badge TFG */}
         <div className={styles.badge}>
           <span className={styles.badgeDot} />
-          Prototipo Académico · TFG · 2026
+          Trabajo Final de Grado · 2026
         </div>
       </div>
 

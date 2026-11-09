@@ -18,9 +18,10 @@
 
 import { useState, useRef, useCallback } from "react";
 import type { GeoPoint, IncidentCategory, IncidentSeverity, Incident } from "@/lib/types";
-import { haversineDistance, GEOFENCE_RADIUS_M, formatDistance } from "@/lib/spatial";
+import { GEOFENCE_RADIUS_M, formatDistance } from "@/lib/spatial";
 import { computeFileHash, validateImageFile, formatFileSize } from "@/lib/exif";
-import { MOCK_INCIDENTS } from "@/lib/db";
+import { api } from "@/lib/cliente/api";
+import { CATEGORIAS, PRECISION_GPS_MAXIMA } from "@/lib/reglas";
 import styles from "./ReportForm.module.css";
 
 // ---------------------------------------------------------------------------
@@ -39,12 +40,10 @@ interface ReportFormProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (incident: Incident) => void;
-  initialLocation?: GeoPoint | null;
 }
 
-const CATEGORIES: IncidentCategory[] = [
-  "Bache", "Iluminación", "Basura", "Vandalismo", "Inundación", "Otro",
-];
+const CATEGORIES: IncidentCategory[] = [...CATEGORIAS];
+const MAX_DESCRIPCION = 200;
 
 const SEVERITY_OPTIONS: { value: IncidentSeverity; label: string; color: string }[] = [
   { value: "low",    label: "Bajo — Molestia menor",     color: "#eab308" },
@@ -60,13 +59,12 @@ export default function ReportForm({
   isOpen,
   onClose,
   onSuccess,
-  initialLocation,
 }: ReportFormProps) {
   // Estado de pasos del wizard
   const [step, setStep] = useState<FormStep>("gps");
 
   // Estado del formulario
-  const [location, setLocation] = useState<GeoPoint | null>(initialLocation || null);
+  const [location, setLocation] = useState<GeoPoint | null>(null);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [category, setCategory] = useState<IncidentCategory>("Bache");
   const [description, setDescription] = useState("");
@@ -82,6 +80,7 @@ export default function ReportForm({
   const [geofenceAlert, setGeofenceAlert] = useState<GeofenceAlert | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [trustMessage, setTrustMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,13 +103,23 @@ export default function ReportForm({
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const precision = Math.round(position.coords.accuracy);
+        setGpsLoading(false);
+        // HU-02: si la precisión supera el máximo, se pide repetir la captura
+        if (precision > PRECISION_GPS_MAXIMA) {
+          setLocation(null);
+          setGpsAccuracy(null);
+          setGpsError(
+            `La precisión del GPS es de ±${precision} m y se necesitan ${PRECISION_GPS_MAXIMA} m o menos. Salí a un lugar abierto, esperá unos segundos y volvé a intentar.`
+          );
+          return;
+        }
         const coords: GeoPoint = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         };
         setLocation(coords);
-        setGpsAccuracy(Math.round(position.coords.accuracy));
-        setGpsLoading(false);
+        setGpsAccuracy(precision);
 
         // Auto-avanzar al siguiente paso
         setTimeout(() => setStep("details"), 800);
@@ -172,59 +181,33 @@ export default function ReportForm({
   // -----------------------------------------------------------------------
 
   /**
-   * Verifica geofencing ANTES de enviar al servidor.
-   * Primera línea de defensa en cliente (TFG §5.2).
-   * El servidor re-valida esta lógica (defense in depth).
+   * Envía el reporte. La validación de duplicados por proximidad (50 m),
+   * de la huella de la foto y de la precisión GPS la hace el servidor con
+   * PostGIS; si encuentra un incidente cercano responde 409 y se ofrece
+   * confirmarlo en lugar de duplicarlo.
    */
   const checkGeofenceAndSubmit = useCallback(async () => {
-    if (!location || !photoHash) return;
+    if (!location || !photoHash || gpsAccuracy === null) return;
 
     setSubmitting(true);
     setSubmitError(null);
     setGeofenceAlert(null);
 
-    // Geofencing en cliente usando el mock de incidentes
-    // (en producción esto vendría del servidor via /api/incidents/check)
-    const activeIncidents = MOCK_INCIDENTS.filter(
-      (i) => i.status !== "resolved" && i.category === category
-    );
-
-    for (const incident of activeIncidents) {
-      const distance = haversineDistance(location, incident.geom);
-      if (distance < GEOFENCE_RADIUS_M) {
-        // BLOQUEO: incidente duplicado detectado
-        setGeofenceAlert({ type: "duplicate", nearbyIncident: incident, distance });
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    // Sin duplicados — enviar al servidor
-    await submitReport();
-  }, [location, photoHash, category]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const submitReport = async () => {
-    if (!location || !photoHash) return;
-
     try {
-      const response = await fetch("/api/incidents", {
+      const { res, data } = await api("/api/incidents", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           geom: location,
+          gpsAccuracy,
           category,
           description,
           photoHash,
           exifData: null,
           severity,
-          userId: "user-demo", // Mock userId
         }),
       });
 
-      const data = await response.json();
-
-      if (response.status === 409) {
-        // Geofencing detectado en servidor
+      if (res.status === 409 && data?.error === "GEOFENCE_DUPLICATE") {
         setGeofenceAlert({
           type: "duplicate",
           nearbyIncident: data.nearbyIncident,
@@ -234,53 +217,49 @@ export default function ReportForm({
         return;
       }
 
-      if (!response.ok) {
-        setSubmitError(data.error || "Error al crear el reporte.");
+      if (!res.ok) {
+        setSubmitError(data?.message || "Error al crear el reporte.");
         setSubmitting(false);
         return;
       }
 
-      // Éxito
       onSuccess(data.data);
       resetForm();
       onClose();
     } catch {
-      setSubmitError("Error de conexión. Verifica tu internet e intenta nuevamente.");
+      setSubmitError("Error de conexión. Verificá tu internet e intentá nuevamente.");
       setSubmitting(false);
     }
-  };
+  }, [location, photoHash, gpsAccuracy, category, description, severity]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * Suma +1 punto de confianza al incidente existente detectado por geofencing.
-   * Implementa TFG §6.1.
+   * Suma 1 punto de confianza al incidente existente detectado por proximidad.
+   * El servidor valida distancia (< 50 m), autoría, doble confirmación y límite diario.
    */
   const addTrustPoint = async () => {
-    if (!geofenceAlert || !location) return;
+    if (!geofenceAlert || !location || gpsAccuracy === null) return;
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      const response = await fetch("/api/trust", {
+      const { res, data } = await api("/api/trust", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           incidentId: geofenceAlert.nearbyIncident.id,
-          userId: "user-demo",
           userLocation: location,
+          gpsAccuracy,
         }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setSubmitError(data.error || "No se pudo confirmar el incidente.");
+      if (!res.ok) {
+        setSubmitError(data?.message || "No se pudo confirmar el incidente.");
         setSubmitting(false);
         return;
       }
 
-      alert(`✅ ${data.message}`);
       onSuccess(data.data);
-      resetForm();
-      onClose();
+      setTrustMessage(data.message);
+      setSubmitting(false);
     } catch {
       setSubmitError("Error de conexión al confirmar.");
       setSubmitting(false);
@@ -301,6 +280,7 @@ export default function ReportForm({
     setGpsError(null);
     setPhotoError(null);
     setSubmitError(null);
+    setTrustMessage(null);
     setSubmitting(false);
   };
 
@@ -329,13 +309,16 @@ export default function ReportForm({
         {/* Stepper */}
         <StepIndicator current={step} />
 
-        {/* Alerta de Geofencing — BLOQUEA el flujo normal */}
+        {/* Alerta de duplicado por proximidad — BLOQUEA el flujo normal */}
         {geofenceAlert && (
           <GeofenceAlertPanel
             alert={geofenceAlert}
             onAddTrust={addTrustPoint}
-            onCancel={() => { setGeofenceAlert(null); setSubmitting(false); }}
+            onCancel={() => { setGeofenceAlert(null); setSubmitting(false); setSubmitError(null); }}
+            onClose={() => { resetForm(); onClose(); }}
             submitting={submitting}
+            error={submitError}
+            done={trustMessage}
           />
         )}
 
@@ -497,7 +480,7 @@ function StepGPS({
       )}
 
       <p className={styles.hint}>
-        💡 Si estás en escritorio, el navegador usará tu IP para geolocalización aproximada. En móvil se usa el GPS del dispositivo.
+        💡 Se aceptan posiciones con una precisión de {PRECISION_GPS_MAXIMA} m o menos. En una computadora la ubicación se estima por IP y suele ser menos precisa.
       </p>
     </div>
   );
@@ -537,12 +520,12 @@ function StepDetails({
 
       <div className={styles.field}>
         <label className={styles.label} htmlFor="textarea-description">
-          Descripción * <span className={styles.charCount}>{description.length}/500</span>
+          Descripción * <span className={styles.charCount}>{description.length}/{MAX_DESCRIPCION}</span>
         </label>
         <textarea
           id="textarea-description"
           value={description}
-          onChange={(e) => onDescriptionChange(e.target.value.slice(0, 500))}
+          onChange={(e) => onDescriptionChange(e.target.value.slice(0, MAX_DESCRIPCION))}
           placeholder="Describe el incidente con detalle: ¿qué ocurre? ¿desde cuándo? ¿qué riesgos genera?"
           rows={4}
           className={styles.textarea}
@@ -593,7 +576,7 @@ function StepPhoto({
   photoPreview: string | null;
   photoHash: string | null;
   error: string | null;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  fileInputRef: React.RefObject<HTMLInputElement>;
   onFileSelect: (file: File) => void;
   onBack: () => void;
   onNext: () => void;
@@ -603,7 +586,7 @@ function StepPhoto({
       <div className={styles.stepIcon}>📷</div>
       <h3 className={styles.stepTitle}>Evidencia fotográfica</h3>
       <p className={styles.stepDesc}>
-        La foto es <strong>obligatoria</strong>. Se calculará un hash SHA-256 para detectar duplicados (TFG §5.3).
+        La foto es <strong>obligatoria</strong>. Se calcula su huella SHA-256 para rechazar una imagen ya usada en otro reporte.
       </p>
 
       {error && <div className={styles.errorBox}>{error}</div>}
@@ -725,7 +708,7 @@ function StepConfirm({
       </div>
 
       <p className={styles.hint}>
-        Al confirmar, el sistema verificará que no exista un incidente activo de la misma categoría a menos de <strong>50 metros</strong> de tu ubicación.
+        Al confirmar, el sistema verificará que no exista un incidente abierto de la misma categoría a menos de <strong>{GEOFENCE_RADIUS_M} metros</strong> de tu ubicación.
       </p>
 
       <div className={styles.navButtons}>
@@ -745,26 +728,44 @@ function StepConfirm({
 
 // --- Panel de alerta de geofencing ---
 function GeofenceAlertPanel({
-  alert, onAddTrust, onCancel, submitting,
+  alert, onAddTrust, onCancel, onClose, submitting, error, done,
 }: {
   alert: GeofenceAlert;
   onAddTrust: () => void;
   onCancel: () => void;
+  onClose: () => void;
   submitting: boolean;
+  error: string | null;
+  done: string | null;
 }) {
   const inc = alert.nearbyIncident;
+  if (done) {
+    return (
+      <div className={styles.geofenceAlert}>
+        <div className={styles.geofenceIcon}>✅</div>
+        <h3 className={styles.geofenceTitle}>Confirmación registrada</h3>
+        <p className={styles.geofenceDesc}>{done}</p>
+        <div className={styles.geofenceActions}>
+          <button className={styles.btnTrust} onClick={onClose} id="btn-geofence-done">Volver al mapa</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={styles.geofenceAlert}>
       <div className={styles.geofenceIcon}>🛑</div>
       <h3 className={styles.geofenceTitle}>Incidente duplicado detectado</h3>
       <p className={styles.geofenceDesc}>
-        Ya existe un incidente activo de tipo <strong>&quot;{inc.category}&quot;</strong> a{" "}
-        <strong>{formatDistance(alert.distance)}</strong> de tu ubicación (radio de geofencing: {GEOFENCE_RADIUS_M}m).
+        Ya existe un incidente de tipo <strong>&quot;{inc.category}&quot;</strong> a{" "}
+        <strong>{formatDistance(alert.distance)}</strong> de tu ubicación (radio de validación: {GEOFENCE_RADIUS_M} m).
       </p>
+      {error && <div className={styles.errorBox}>{error}</div>}
 
       <div className={styles.geofenceCard}>
         <div className={styles.geofenceCardTitle}>{inc.category}</div>
-        <div className={styles.geofenceCardDesc}>{inc.description.slice(0, 100)}...</div>
+        <div className={styles.geofenceCardDesc}>
+          {inc.description.length > 100 ? `${inc.description.slice(0, 100)}…` : inc.description}
+        </div>
         <div className={styles.geofenceCardMeta}>
           <span>★ {inc.trustPoints} pts de confianza</span>
           <span>📍 {formatDistance(alert.distance)}</span>
@@ -774,7 +775,7 @@ function GeofenceAlertPanel({
       <p className={styles.geofenceQuestion}>
         ¿Deseas confirmar la existencia de este incidente?
         <br />
-        <small>Sumar tu confirmación suma +1 Punto de Confianza al reporte existente.</small>
+        <small>Tu confirmación suma 1 punto de confianza al reporte existente.</small>
       </p>
 
       <div className={styles.geofenceActions}>
@@ -792,7 +793,7 @@ function GeofenceAlertPanel({
           disabled={submitting}
           id="btn-geofence-confirm"
         >
-          {submitting ? <><span className={styles.spinner} />...</> : "✅ Sumar +1 Confianza"}
+          {submitting ? <><span className={styles.spinner} />...</> : "✅ Confirmar existencia"}
         </button>
       </div>
     </div>

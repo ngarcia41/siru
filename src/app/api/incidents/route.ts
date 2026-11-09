@@ -1,96 +1,51 @@
 /**
  * SIRU — app/api/incidents/route.ts
- * API Route de Next.js — Gestión de incidentes urbanos.
  *
- * Endpoints:
- *   GET  /api/incidents          → Lista todos los incidentes
- *   POST /api/incidents          → Crea un nuevo incidente con geofencing
+ *   GET  /api/incidents  → incidentes no desestimados (vecino u operador)
+ *   POST /api/incidents  → alta de incidente (solo vecino), HU-02
  *
- * Objetivo TFG §5.2 — El endpoint POST implementa el control de duplicados
- * espaciales: si existe un incidente activo de la misma categoría a <50m,
- * retorna HTTP 409 (Conflict) con la referencia al incidente existente.
+ * El alta valida en el servidor la precisión del GPS (≤ 25 m), el límite de
+ * 5 reportes por día, la huella SHA-256 de la foto y la existencia de un
+ * incidente abierto de la misma categoría a menos de 50 m (HTTP 409).
  */
-
 import { NextRequest, NextResponse } from "next/server";
-import { incidentStore, insertIncident, getActiveIncidents } from "@/lib/db";
-import { checkGeofence } from "@/lib/spatial";
-import type { CreateIncidentDto, Incident } from "@/lib/types";
-import { v4 as uuidv4 } from "crypto"; // Usamos crypto para UUID en edge
+import { requerirSesion } from "@/lib/servidor/sesion";
+import { crearIncidente, listarIncidentes } from "@/lib/servidor/incidentes";
+import { error, esPunto, ipDe, leerJson } from "@/lib/servidor/http";
+import type { CreateIncidentDto } from "@/lib/types";
 
-// ---------------------------------------------------------------------------
-// GET /api/incidents
-// ---------------------------------------------------------------------------
+export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<NextResponse> {
-  return NextResponse.json({
-    success: true,
-    data: incidentStore,
-    total: incidentStore.length,
-  });
+export async function GET(req: NextRequest) {
+  const s = await requerirSesion(req);
+  if (!s.ok) return s.respuesta;
+  const data = await listarIncidentes();
+  return NextResponse.json({ success: true, data, total: data.length });
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/incidents
-// ---------------------------------------------------------------------------
+export async function POST(req: NextRequest) {
+  const s = await requerirSesion(req, { roles: ["VECINO"] });
+  if (!s.ok) return s.respuesta;
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+  const body = await leerJson<CreateIncidentDto>(req);
+  if (!body || !esPunto(body.geom) || !body.category || !body.description || !body.photoHash || !body.severity) {
+    return error(400, "DATOS_INCOMPLETOS", "Faltan datos obligatorios: ubicación, categoría, severidad, descripción y foto.");
+  }
+
   try {
-    const body: CreateIncidentDto = await request.json();
-
-    // Validación básica de campos obligatorios
-    if (!body.geom || !body.category || !body.description || !body.photoHash) {
-      return NextResponse.json(
-        { success: false, error: "Campos obligatorios faltantes: geom, category, description, photoHash" },
-        { status: 400 }
-      );
-    }
-
-    // -----------------------------------------------------------------------
-    // GEOFENCING: Control de duplicados espaciales (TFG §5.2)
-    // -----------------------------------------------------------------------
-    const activeIncidents = getActiveIncidents();
-    const geofenceResult = checkGeofence(body.geom, body.category, activeIncidents);
-
-    if (geofenceResult.hasDuplicate && geofenceResult.nearbyIncident) {
-      // Devolver HTTP 409 con referencia al incidente existente
-      return NextResponse.json(
-        {
-          success: false,
-          error: "GEOFENCE_DUPLICATE",
-          message: `Ya existe un incidente de tipo "${body.category}" a ${Math.round(geofenceResult.distanceMeters!)} metros. ¿Desea confirmar su existencia?`,
-          nearbyIncident: geofenceResult.nearbyIncident,
-          distanceMeters: geofenceResult.distanceMeters,
-        },
-        { status: 409 }
-      );
-    }
-
-    // -----------------------------------------------------------------------
-    // Creación del nuevo incidente
-    // -----------------------------------------------------------------------
-    const newIncident: Incident = {
-      id: `inc-${Date.now()}`,
-      geom: body.geom,
-      category: body.category,
-      description: body.description,
-      photoHash: body.photoHash,
-      exifData: body.exifData,
-      trustPoints: 0,
-      status: "unverified",
-      severity: body.severity || "low",
-      createdBy: body.userId,
-      confirmedBy: [],
-      createdAt: new Date().toISOString(),
-    };
-
-    const created = insertIncident(newIncident);
-
-    return NextResponse.json({ success: true, data: created }, { status: 201 });
-  } catch (error) {
-    console.error("[SIRU API] Error creating incident:", error);
-    return NextResponse.json(
-      { success: false, error: "Error interno del servidor" },
-      { status: 500 }
-    );
+    const r = await crearIncidente(s.usuario.id, {
+      lat: body.geom.lat,
+      lng: body.geom.lng,
+      precision: body.gpsAccuracy,
+      categoria: body.category,
+      severidad: body.severity,
+      descripcion: String(body.description),
+      hashFoto: String(body.photoHash).toLowerCase(),
+    }, ipDe(req));
+    if (!r.ok) return error(r.status, r.codigo, r.mensaje, r.extra);
+    return NextResponse.json({ success: true, data: r.datos }, { status: 201 });
+  } catch (e) {
+    console.error("[SIRU API] Error al crear el incidente:", e);
+    return error(500, "ERROR_INTERNO", "No se pudo registrar el incidente. Intentá de nuevo.");
   }
 }

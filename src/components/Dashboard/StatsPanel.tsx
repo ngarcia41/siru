@@ -13,7 +13,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Incident, IncidentStatus, IncidentSeverity } from "@/lib/types";
+import Link from "next/link";
+import type { Incident, IncidentStatus, SesionCliente } from "@/lib/types";
 import styles from "./StatsPanel.module.css";
 
 interface StatsPanelProps {
@@ -23,15 +24,26 @@ interface StatsPanelProps {
   onSelectIncident: (incident: Incident) => void;
   onToggleHeatmap: (v: boolean) => void;
   onNewReport: () => void;
+  usuario: SesionCliente | null;
+  onLogout: () => void;
+  /** Solo para operadores: registra el cierre de un incidente activo o en revisión. */
+  onResolve?: (incident: Incident) => void;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
   Bache: "🕳",
-  Iluminación: "💡",
-  Basura: "🗑",
-  Vandalismo: "🔴",
-  Inundación: "💧",
+  Luminaria: "💡",
+  Anegamiento: "💧",
+  "Basura acumulada": "🗑",
   Otro: "⚠",
+};
+
+const STATUS_LABEL: Record<IncidentStatus, string> = {
+  unverified: "Sin verificar",
+  active: "Activo",
+  review: "En revisión",
+  resolved: "Resuelto",
+  dismissed: "Desestimado",
 };
 
 export default function StatsPanel({
@@ -41,6 +53,9 @@ export default function StatsPanel({
   onSelectIncident,
   onToggleHeatmap,
   onNewReport,
+  usuario,
+  onLogout,
+  onResolve,
 }: StatsPanelProps) {
   const [filter, setFilter] = useState<IncidentStatus | "all">("all");
   const [activeTab, setActiveTab] = useState<"list" | "analytics">("list");
@@ -87,10 +102,25 @@ export default function StatsPanel({
             <span className={styles.brandSub}>Ramos Mejía</span>
           </div>
         </div>
-        <button className={styles.reportBtn} onClick={onNewReport} id="btn-new-report-panel">
-          <span>+</span> Reportar
-        </button>
+        {usuario?.rol === "VECINO" && (
+          <button className={styles.reportBtn} onClick={onNewReport} id="btn-new-report-panel">
+            <span>+</span> Reportar
+          </button>
+        )}
       </div>
+
+      {/* ── Usuario de la sesión ── */}
+      {usuario && (
+        <div className={styles.userBar}>
+          <span className={styles.userEmail} title={usuario.email}>{usuario.email}</span>
+          <span className={styles.userRole}>{usuario.rol === "OPERADOR" ? "Operador" : "Vecino"}</span>
+          <div className={styles.userLinks}>
+            {usuario.rol === "OPERADOR" && <Link href="/auditoria">Auditoría</Link>}
+            <Link href="/cambiar-clave">Cambiar clave</Link>
+            <button type="button" onClick={onLogout}>Salir</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Stats Cards ── */}
       <div className={styles.statsGrid}>
@@ -104,7 +134,7 @@ export default function StatsPanel({
         />
         <StatCard
           value={stats.unverified}
-          label="Sin Verificar"
+          label="Sin verificar"
           color="#94a3b8"
           icon="⚪"
           onClick={() => setFilter("unverified")}
@@ -168,7 +198,7 @@ export default function StatsPanel({
               className={`${styles.filterChip} ${filter === "unverified" ? styles.filterActive : ""}`}
               onClick={() => setFilter("unverified")}
             >
-              Sin Verificar
+              Sin verificar
             </button>
           </div>
 
@@ -182,6 +212,7 @@ export default function StatsPanel({
                   incident={incident}
                   isSelected={incident.id === selectedId}
                   onClick={() => onSelectIncident(incident)}
+                  onResolve={onResolve}
                 />
               ))
             )}
@@ -278,12 +309,14 @@ function StatCard({
 }
 
 function IncidentCard({
-  incident, isSelected, onClick,
+  incident, isSelected, onClick, onResolve,
 }: {
   incident: Incident;
   isSelected: boolean;
   onClick: () => void;
+  onResolve?: (incident: Incident) => void;
 }) {
+  const resoluble = !!onResolve && (incident.status === "active" || incident.status === "review");
   const statusColor =
     incident.status === "active"
       ? "#22c55e"
@@ -301,6 +334,7 @@ function IncidentCard({
   const trustPct = Math.min((incident.trustPoints / 5) * 100, 100);
 
   return (
+    <div className={styles.incidentWrap}>
     <button
       className={`${styles.incidentCard} ${isSelected ? styles.incidentSelected : ""}`}
       onClick={onClick}
@@ -314,15 +348,13 @@ function IncidentCard({
           className={styles.incidentStatus}
           style={{ color: statusColor, background: `${statusColor}18` }}
         >
-          {incident.status === "active"
-            ? "Activo"
-            : incident.status === "unverified"
-            ? "Sin Verificar"
-            : "Resuelto"}
+          {STATUS_LABEL[incident.status]}
         </span>
       </div>
 
-      <p className={styles.incidentDesc}>{incident.description.slice(0, 70)}...</p>
+      <p className={styles.incidentDesc}>
+        {incident.description.length > 70 ? `${incident.description.slice(0, 70)}…` : incident.description}
+      </p>
 
       <div className={styles.incidentMeta}>
         <span className={styles.incidentSeverity} style={{ color: severityColor }}>
@@ -342,6 +374,12 @@ function IncidentCard({
         />
       </div>
     </button>
+    {resoluble && (
+      <button type="button" className={styles.resolveBtn} onClick={() => onResolve!(incident)}>
+        ✓ Registrar cierre
+      </button>
+    )}
+    </div>
   );
 }
 

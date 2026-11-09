@@ -1,153 +1,86 @@
 /**
  * SIRU — lib/types.ts
- * Interfaces TypeScript que modelan los esquemas de datos del sistema.
- * Inspiran directamente en el esquema DDL de PostgreSQL + PostGIS definido
- * en la sección de arquitectura de datos de la memoria del TFG.
+ * Tipos compartidos entre la interfaz y la API.
  *
- * Equivalencias PostGIS:
- *   GeoPoint       → GEOMETRY(Point, 4326)
- *   Incident.geom  → columna geom con SRID 4326 (WGS-84)
+ * La base de datos (PostgreSQL + PostGIS) usa los nombres del DER del
+ * documento (INCIDENTE, CONFIRMACION, ...); la API los traduce a estos
+ * objetos para la interfaz. Ver lib/servidor/incidentes.ts.
  */
 
-// ---------------------------------------------------------------------------
-// Tipos espaciales
-// ---------------------------------------------------------------------------
-
-/** Representa un punto geográfico en el sistema de referencia WGS-84 (EPSG:4326) */
+/** Punto geográfico en WGS-84 (EPSG:4326). En la base: GEOMETRY(Point, 4326). */
 export interface GeoPoint {
-  lat: number; // Latitud decimal
-  lng: number; // Longitud decimal
+  lat: number;
+  lng: number;
 }
 
-// ---------------------------------------------------------------------------
-// Enumeraciones de dominio
-// ---------------------------------------------------------------------------
+/** Categorías definidas en el documento (tabla CATEGORIA). */
+export type IncidentCategory = "Bache" | "Luminaria" | "Anegamiento" | "Basura acumulada" | "Otro";
 
 /**
- * Categorías de incidentes disponibles en el sistema.
- * Objetivo TFG §3.2 – Taxonomía de Eventos Urbanos.
+ * Ciclo de vida del incidente (columna INCIDENTE.Estado):
+ *   unverified = SIN_VERIFICAR (menos de 3 puntos)
+ *   active     = ACTIVO        (3 puntos o más; entra al mapa de calor)
+ *   review     = EN_REVISION   (resolución informada, pendiente de validar)
+ *   resolved   = RESUELTO      (cierre validado por un operador)
+ *   dismissed  = DESESTIMADO   (reporte falso o fuera de alcance)
  */
-export type IncidentCategory =
-  | "Bache"
-  | "Iluminación"
-  | "Basura"
-  | "Vandalismo"
-  | "Inundación"
-  | "Otro";
+export type IncidentStatus = "unverified" | "active" | "review" | "resolved" | "dismissed";
 
-/**
- * Ciclo de vida del incidente según puntos de confianza acumulados.
- *
- * Sin Verificar  (0–2 pts): recién creado, opacidad reducida en el mapa.
- * Activo         (≥3 pts):  validado por la comunidad, ingresa al heatmap.
- * Resuelto       (cierre participativo): marcador gris, pasa a historial.
- */
-export type IncidentStatus = "unverified" | "active" | "resolved";
-
-/** Nivel de severidad visual del marcador cuando el reporte es "Activo" */
+/** Severidad (tabla SEVERIDAD): baja, media o alta. */
 export type IncidentSeverity = "low" | "medium" | "high";
 
-// ---------------------------------------------------------------------------
-// Entidad principal: Incidente
-// ---------------------------------------------------------------------------
-
-/**
- * Equivalente a la tabla `incidents` en PostgreSQL + PostGIS.
- *
- * CREATE TABLE incidents (
- *   id           UUID PRIMARY KEY,
- *   geom         GEOMETRY(Point, 4326) NOT NULL,  -- índice GIST
- *   category     TEXT NOT NULL,
- *   description  TEXT NOT NULL,
- *   photo_hash   TEXT NOT NULL,                   -- SHA-256 anti-duplicados
- *   trust_points INT  DEFAULT 0,
- *   status       TEXT DEFAULT 'unverified',
- *   severity     TEXT DEFAULT 'low',
- *   created_by   UUID REFERENCES users(id),
- *   confirmed_by UUID[],
- *   created_at   TIMESTAMPTZ DEFAULT now(),
- *   resolved_at  TIMESTAMPTZ
- * );
- * CREATE INDEX incidents_geom_idx ON incidents USING GIST(geom);
- */
 export interface Incident {
   id: string;
-  geom: GeoPoint; // Equivale a GEOMETRY(Point, 4326)
-  category: IncidentCategory;
-  description: string;
-  photoHash: string; // SHA-256 del archivo — control anti-spam/duplicados
-  exifData: ExifMetadata | null; // Metadatos EXIF extraídos de la foto
-  trustPoints: number; // 0 = sin verificar; ≥3 = activo
-  status: IncidentStatus;
-  severity: IncidentSeverity;
-  createdBy: string; // userId del reportador (no anónimo)
-  confirmedBy: string[]; // userIds que sumaron confianza
-  createdAt: string; // ISO 8601
-  resolvedAt?: string; // Solo si status === 'resolved'
-  address?: string; // Dirección aproximada (geocoding inverso)
-}
-
-// ---------------------------------------------------------------------------
-// Entidad: Usuario
-// ---------------------------------------------------------------------------
-
-/**
- * Equivalente a la tabla `users` en PostgreSQL.
- * La autenticación obligatoria previene el anonimato malicioso (TFG §4.1).
- */
-export interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  passwordHash: string; // bcrypt en producción; SHA-256 en mock
-  createdAt: string;
-  reportCount: number;
-  trustScore: number; // Reputación acumulada del usuario
-}
-
-// ---------------------------------------------------------------------------
-// Metadatos EXIF
-// ---------------------------------------------------------------------------
-
-/**
- * Subconjunto de metadatos EXIF relevantes para la validación de integridad.
- * Objetivo TFG §5.3 – Mitigación de spam y fotos genéricas.
- */
-export interface ExifMetadata {
-  make?: string; // Fabricante del dispositivo
-  model?: string; // Modelo del dispositivo
-  dateTaken?: string; // Fecha de captura (ISO 8601)
-  gpsLat?: number; // Latitud embebida en EXIF (si existe)
-  gpsLng?: number; // Longitud embebida en EXIF (si existe)
-  width?: number; // Ancho en píxeles
-  height?: number; // Alto en píxeles
-}
-
-// ---------------------------------------------------------------------------
-// DTOs (Data Transfer Objects) para API Routes
-// ---------------------------------------------------------------------------
-
-/** Payload para crear un nuevo incidente (POST /api/incidents) */
-export interface CreateIncidentDto {
   geom: GeoPoint;
   category: IncidentCategory;
   description: string;
   photoHash: string;
   exifData: ExifMetadata | null;
+  gpsAccuracy: number | null;
+  trustPoints: number;
+  status: IncidentStatus;
   severity: IncidentSeverity;
-  userId: string;
+  createdBy: string;
+  confirmedBy: string[];
+  createdAt: string;
+  resolvedAt?: string;
+  address?: string;
 }
 
-/** Respuesta de la capa de geofencing */
-export interface GeofenceCheckResult {
-  hasDuplicate: boolean;
-  nearbyIncident: Incident | null;
-  distanceMeters: number | null;
+/** Usuario de la sesión actual, tal como lo informa GET /api/auth/sesion. */
+export interface SesionCliente {
+  id: number;
+  email: string;
+  rol: "VECINO" | "OPERADOR";
+  debeCambiarClave: boolean;
+  inactividadMinutos: number;
 }
 
-/** Payload para sumar punto de confianza (POST /api/trust) */
+/** Subconjunto de metadatos EXIF relevantes para la validación de la imagen. */
+export interface ExifMetadata {
+  make?: string;
+  model?: string;
+  dateTaken?: string;
+  gpsLat?: number;
+  gpsLng?: number;
+  width?: number;
+  height?: number;
+}
+
+/** POST /api/incidents. El usuario se toma de la sesión, nunca del cuerpo. */
+export interface CreateIncidentDto {
+  geom: GeoPoint;
+  gpsAccuracy: number;
+  category: IncidentCategory;
+  description: string;
+  photoHash: string;
+  exifData: ExifMetadata | null;
+  severity: IncidentSeverity;
+}
+
+/** POST /api/trust. */
 export interface AddTrustDto {
   incidentId: string;
-  userId: string;
   userLocation: GeoPoint;
+  gpsAccuracy: number;
 }

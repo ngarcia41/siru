@@ -5,6 +5,8 @@
  */
 
 import type { Metadata, Viewport } from "next";
+// Estilos de Leaflet desde el paquete instalado (no depende de un CDN externo)
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +15,7 @@ export const metadata: Metadata = {
     "Plataforma ciudadana de reportes urbanos con verificación espacial y puntos de confianza colectivos. Proyecto TFG — Ramos Mejía, Buenos Aires.",
   keywords: ["reportes urbanos", "participación ciudadana", "Ramos Mejía", "incidentes", "geolocalización"],
   authors: [{ name: "SIRU TFG Project" }],
-  robots: "noindex, nofollow", // Prototipo académico
+  robots: "noindex, nofollow", // Proyecto académico, no indexar
 };
 
 export const viewport: Viewport = {
@@ -31,15 +33,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <head>
-        {/* Leaflet CSS — se carga aquí para evitar FOUC en el mapa */}
-        <link
-          rel="stylesheet"
-          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossOrigin=""
-        />
-      </head>
       <body>{children}</body>
     </html>
   );

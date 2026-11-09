@@ -1,86 +1,42 @@
 /**
  * SIRU — app/api/trust/route.ts
- * API Route — Sistema de Puntos de Confianza.
+ * POST /api/trust — Confirmación participativa (HU-03), solo vecino.
  *
- * POST /api/trust — Sumar +1 punto de confianza a un incidente.
- *
- * Reglas de negocio (TFG §6.1):
- *   1. El usuario debe estar autenticado
- *   2. El usuario no puede confirmar su propio reporte
- *   3. El usuario no puede confirmar el mismo reporte más de una vez
- *   4. El usuario debe estar a <50m del incidente (validado en frontend; aquí se re-valida)
- *   5. Al llegar a 3 puntos, el estado cambia a "active" automáticamente
+ * Reglas validadas en el servidor:
+ *   1. Sesión activa con perfil de vecino.
+ *   2. Precisión del GPS de 25 m o menos.
+ *   3. No puede confirmar su propio reporte ni confirmar dos veces.
+ *   4. Debe estar a menos de 50 m (ST_Distance de PostGIS).
+ *   5. Máximo 20 confirmaciones cada 24 horas.
+ *   6. Al llegar a 3 puntos, el incidente pasa a Activo.
  */
-
 import { NextRequest, NextResponse } from "next/server";
-import { incidentStore, updateIncidentTrust } from "@/lib/db";
-import { haversineDistance, GEOFENCE_RADIUS_M } from "@/lib/spatial";
+import { requerirSesion } from "@/lib/servidor/sesion";
+import { confirmarIncidente } from "@/lib/servidor/incidentes";
+import { error, esPunto, ipDe, leerJson } from "@/lib/servidor/http";
 import type { AddTrustDto } from "@/lib/types";
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export const dynamic = "force-dynamic";
+
+export async function POST(req: NextRequest) {
+  const s = await requerirSesion(req, { roles: ["VECINO"] });
+  if (!s.ok) return s.respuesta;
+
+  const body = await leerJson<AddTrustDto>(req);
+  if (!body || !/^\d{1,9}$/.test(String(body.incidentId)) || !esPunto(body.userLocation)) {
+    return error(400, "DATOS_INCOMPLETOS", "Faltan datos obligatorios: incidente y ubicación.");
+  }
+
   try {
-    const body: AddTrustDto = await request.json();
-    const { incidentId, userId, userLocation } = body;
-
-    if (!incidentId || !userId || !userLocation) {
-      return NextResponse.json(
-        { success: false, error: "Campos obligatorios: incidentId, userId, userLocation" },
-        { status: 400 }
-      );
-    }
-
-    const incident = incidentStore.find((i) => i.id === incidentId);
-    if (!incident) {
-      return NextResponse.json(
-        { success: false, error: "Incidente no encontrado" },
-        { status: 404 }
-      );
-    }
-
-    // Regla: No puede confirmar su propio reporte
-    if (incident.createdBy === userId) {
-      return NextResponse.json(
-        { success: false, error: "No puede confirmar su propio reporte" },
-        { status: 403 }
-      );
-    }
-
-    // Regla: No puede confirmar dos veces
-    if (incident.confirmedBy.includes(userId)) {
-      return NextResponse.json(
-        { success: false, error: "Ya confirmó la existencia de este incidente" },
-        { status: 409 }
-      );
-    }
-
-    // Regla: Validación de proximidad espacial (50m)
-    const distance = haversineDistance(userLocation, incident.geom);
-    if (distance >= GEOFENCE_RADIUS_M) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Debe estar a menos de ${GEOFENCE_RADIUS_M}m del incidente para confirmar (distancia actual: ${Math.round(distance)}m)`,
-        },
-        { status: 403 }
-      );
-    }
-
-    // Actualizar puntos de confianza (y transición de estado si corresponde)
-    const updated = updateIncidentTrust(incidentId, userId);
-
-    return NextResponse.json({
-      success: true,
-      data: updated,
-      message:
-        updated?.status === "active" && updated.trustPoints === 3
-          ? "¡Incidente validado! Ha alcanzado 3 puntos de confianza y ahora es Activo."
-          : `+1 Punto de Confianza sumado. Total: ${updated?.trustPoints} puntos.`,
-    });
-  } catch (error) {
-    console.error("[SIRU API] Error adding trust:", error);
-    return NextResponse.json(
-      { success: false, error: "Error interno del servidor" },
-      { status: 500 }
-    );
+    const r = await confirmarIncidente(s.usuario.id, Number(body.incidentId), {
+      lat: body.userLocation.lat,
+      lng: body.userLocation.lng,
+      precision: body.gpsAccuracy,
+    }, ipDe(req));
+    if (!r.ok) return error(r.status, r.codigo, r.mensaje);
+    return NextResponse.json({ success: true, data: r.datos, message: r.mensaje });
+  } catch (e) {
+    console.error("[SIRU API] Error al confirmar:", e);
+    return error(500, "ERROR_INTERNO", "No se pudo registrar la confirmación.");
   }
 }

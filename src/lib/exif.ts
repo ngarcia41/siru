@@ -9,7 +9,7 @@
  *
  * Nota académica: Para extracción EXIF completa en producción se utilizaría
  * la librería `exifr` (https://github.com/MikeKovarik/exifr) que soporta
- * lectura de GPS, fabricante y fecha desde JPEG/HEIC/RAW. En este prototipo
+ * lectura de GPS, fabricante y fecha desde JPEG/HEIC/RAW. En esta versión
  * se simula con los datos disponibles via File API del navegador.
  */
 
@@ -106,7 +106,7 @@ export function validateImageFile(file: File): FileValidationResult {
  * En producción, esta función usaría la librería `exifr` para leer EXIF
  * completo incluyendo coordenadas GPS, fabricante del dispositivo y fecha.
  *
- * Por limitaciones del prototipo académico, se obtienen dimensiones de imagen
+ * En esta versión se obtienen solo las dimensiones de la imagen
  * y se simula el resto de metadatos basándose en el user-agent del navegador.
  *
  * @param file - Archivo de imagen

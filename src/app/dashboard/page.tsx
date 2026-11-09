@@ -1,21 +1,21 @@
 /**
  * SIRU — app/dashboard/page.tsx
- * Página principal del dashboard — vista integrada de mapa + panel analítico.
+ * Vista principal: mapa + panel analítico.
  *
- * Arquitectura de la SPA:
- *   - Layout dividido: panel lateral (30%) + mapa (70%) en desktop
- *   - En móvil: panel debajo del mapa con scroll, o como sheet togglable
- *   - Carga dinámica del mapa para evitar SSR (Leaflet usa window)
- *   - Estado de incidentes gestionado en este componente (mock de store)
- *
- * Objetivo TFG §4 — Interfaz de Usuario y Experiencia ciudadana.
+ * Desde el Sprint 2:
+ *   - Exige sesión (middleware + validación de la API).
+ *   - Los incidentes se leen de PostgreSQL con PostGIS (GET /api/incidents).
+ *   - El vecino reporta y confirma; el operador registra el cierre.
+ *   - Aviso 2 minutos antes de que la sesión venza por inactividad.
  */
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
-import type { Incident, GeoPoint } from "@/lib/types";
-import { MOCK_INCIDENTS } from "@/lib/db";
+import { useRouter } from "next/navigation";
+import type { Incident, GeoPoint, SesionCliente } from "@/lib/types";
+import { api, EVENTO_ACTIVIDAD } from "@/lib/cliente/api";
+import { AVISO_EXPIRACION_MINUTOS } from "@/lib/reglas";
 import StatsPanel from "@/components/Dashboard/StatsPanel";
 import ReportForm from "@/components/ReportForm/ReportForm";
 import styles from "./dashboard.module.css";
@@ -32,8 +32,12 @@ const MapView = dynamic(() => import("@/components/Map/MapView"), {
 });
 
 export default function DashboardPage() {
-  // Estado de datos
-  const [incidents, setIncidents] = useState<Incident[]>(MOCK_INCIDENTS);
+  const router = useRouter();
+
+  // Sesión y datos
+  const [usuario, setUsuario] = useState<SesionCliente | null>(null);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [cargaError, setCargaError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Estado de UI
@@ -42,6 +46,10 @@ export default function DashboardPage() {
   const [userLocation, setUserLocation] = useState<GeoPoint | null>(null);
   const [mobileView, setMobileView] = useState<"map" | "panel">("map");
   const [showLocationBanner, setShowLocationBanner] = useState(true);
+  const [avisoSesion, setAvisoSesion] = useState(false);
+  const ultimaActividad = useRef(Date.now());
+
+  const puedeReportar = usuario?.rol === "VECINO";
 
   // Detectar si es mobile
   const [isMobile, setIsMobile] = useState(false);
@@ -51,6 +59,42 @@ export default function DashboardPage() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // Sesión e incidentes
+  useEffect(() => {
+    (async () => {
+      const s = await api("/api/auth/sesion");
+      if (!s.res.ok) return; // api() ya redirige al ingreso si la sesión venció
+      if (s.data.usuario.debeCambiarClave) {
+        router.replace("/cambiar-clave");
+        return;
+      }
+      setUsuario(s.data.usuario);
+      const r = await api("/api/incidents");
+      if (r.res.ok) setIncidents(r.data.data);
+      else setCargaError(r.data?.message ?? "No se pudieron cargar los incidentes.");
+    })();
+  }, [router]);
+
+  // Aviso de expiración por inactividad (30 min vecino, 15 min operador)
+  useEffect(() => {
+    if (!usuario) return;
+    ultimaActividad.current = Date.now();
+    const marcar = () => {
+      ultimaActividad.current = Date.now();
+      setAvisoSesion(false);
+    };
+    window.addEventListener(EVENTO_ACTIVIDAD, marcar);
+    const t = setInterval(() => {
+      const minutos = (Date.now() - ultimaActividad.current) / 60000;
+      if (minutos >= usuario.inactividadMinutos) window.location.href = "/ingresar?expirada=1";
+      else if (minutos >= usuario.inactividadMinutos - AVISO_EXPIRACION_MINUTOS) setAvisoSesion(true);
+    }, 15000);
+    return () => {
+      window.removeEventListener(EVENTO_ACTIVIDAD, marcar);
+      clearInterval(t);
+    };
+  }, [usuario]);
 
   // Intentar obtener ubicación al cargar (no bloqueante)
   useEffect(() => {
@@ -73,23 +117,66 @@ export default function DashboardPage() {
   }, [isMobile]);
 
   const handleNewReport = useCallback(() => {
-    setShowReportForm(true);
+    if (puedeReportar) setShowReportForm(true);
+  }, [puedeReportar]);
+
+  /** Agrega un incidente nuevo o actualiza uno existente (por ejemplo, al confirmarlo). */
+  const upsertIncident = useCallback((incident: Incident) => {
+    setIncidents((prev) => {
+      const i = prev.findIndex((x) => x.id === incident.id);
+      if (i === -1) return [incident, ...prev];
+      const copia = [...prev];
+      copia[i] = incident;
+      return copia;
+    });
+    setSelectedId(incident.id);
   }, []);
 
-  const handleReportSuccess = useCallback((newIncident: Incident) => {
-    // Agregar el nuevo incidente al estado local (actualización optimista)
-    setIncidents((prev) => [newIncident, ...prev]);
-    setSelectedId(newIncident.id);
+  /** El operador registra el cierre de un incidente activo. */
+  const handleResolve = useCallback(async (incident: Incident) => {
+    if (!window.confirm(`¿Registrar como resuelto el incidente "${incident.category}" N.° ${incident.id}?`)) return;
+    const { res, data } = await api(`/api/incidents/${incident.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action: "resolve", observacion: "Cierre validado por el operador." }),
+    });
+    if (res.ok) upsertIncident(data.data);
+    else window.alert(data?.message ?? "No se pudo registrar el cierre.");
+  }, [upsertIncident]);
+
+  const seguirConectado = useCallback(() => {
+    api("/api/auth/sesion");
+  }, []);
+
+  const salir = useCallback(async () => {
+    await api("/api/auth/salir", { method: "POST" });
+    window.location.href = "/ingresar";
   }, []);
 
   return (
     <div className={styles.layout}>
 
+      {/* ── Aviso de expiración de sesión ── */}
+      {avisoSesion && (
+        <div className={styles.locationBanner} role="alert">
+          <span>⏳</span>
+          <span>Tu sesión vence en {AVISO_EXPIRACION_MINUTOS} minutos por inactividad.</span>
+          <button className={styles.bannerAction} onClick={seguirConectado}>Seguir conectado</button>
+        </div>
+      )}
+
+      {/* ── Error de carga ── */}
+      {cargaError && (
+        <div className={styles.locationBanner} role="alert">
+          <span>⚠</span>
+          <span>{cargaError}</span>
+        </div>
+      )}
+
       {/* ── Banner de ubicación ── */}
-      {showLocationBanner && !userLocation && (
+      {!avisoSesion && !cargaError && showLocationBanner && !userLocation && (
         <div className={styles.locationBanner}>
           <span>📍</span>
-          <span>Activa la ubicación para funciones de geofencing en tiempo real</span>
+          <span>Activá la ubicación para reportar y confirmar incidentes cercanos</span>
           <button
             className={styles.bannerClose}
             onClick={() => setShowLocationBanner(false)}
@@ -116,6 +203,9 @@ export default function DashboardPage() {
             onSelectIncident={handleIncidentSelect}
             onToggleHeatmap={setShowHeatmap}
             onNewReport={handleNewReport}
+            usuario={usuario}
+            onLogout={salir}
+            onResolve={usuario?.rol === "OPERADOR" ? handleResolve : undefined}
           />
         </aside>
 
@@ -133,16 +223,18 @@ export default function DashboardPage() {
             showHeatmap={showHeatmap}
           />
 
-          {/* FAB — Botón flotante de reporte */}
-          <button
-            className={styles.fab}
-            onClick={handleNewReport}
-            aria-label="Reportar nuevo incidente"
-            id="fab-report"
-          >
-            <span className={styles.fabIcon}>+</span>
-            <span className={styles.fabLabel}>Reportar</span>
-          </button>
+          {/* FAB — Botón flotante de reporte (solo vecinos) */}
+          {puedeReportar && (
+            <button
+              className={styles.fab}
+              onClick={handleNewReport}
+              aria-label="Reportar nuevo incidente"
+              id="fab-report"
+            >
+              <span className={styles.fabIcon}>+</span>
+              <span className={styles.fabLabel}>Reportar</span>
+            </button>
+          )}
 
           {/* Leyenda del mapa */}
           <div className={styles.legend}>
@@ -161,7 +253,11 @@ export default function DashboardPage() {
             </div>
             <div className={styles.legendItem}>
               <span className={styles.legendDot} style={{ background: "#94a3b8", opacity: 0.5 }} />
-              Sin Verificar (&lt;3 pts)
+              Sin verificar (&lt;3 pts)
+            </div>
+            <div className={styles.legendItem}>
+              <span className={styles.legendDot} style={{ background: "#6b7280" }} />
+              Resuelto
             </div>
           </div>
         </main>
@@ -178,14 +274,16 @@ export default function DashboardPage() {
             <span>🗺</span>
             <span>Mapa</span>
           </button>
-          <button
-            className={styles.mobileNavFab}
-            onClick={handleNewReport}
-            id="mobile-nav-report"
-            aria-label="Nuevo reporte"
-          >
-            🚨
-          </button>
+          {puedeReportar && (
+            <button
+              className={styles.mobileNavFab}
+              onClick={handleNewReport}
+              id="mobile-nav-report"
+              aria-label="Nuevo reporte"
+            >
+              🚨
+            </button>
+          )}
           <button
             className={`${styles.mobileNavBtn} ${mobileView === "panel" ? styles.mobileNavActive : ""}`}
             onClick={() => setMobileView("panel")}
@@ -198,12 +296,13 @@ export default function DashboardPage() {
       )}
 
       {/* ── Modal de Reporte ── */}
-      <ReportForm
-        isOpen={showReportForm}
-        onClose={() => setShowReportForm(false)}
-        onSuccess={handleReportSuccess}
-        initialLocation={userLocation}
-      />
+      {puedeReportar && (
+        <ReportForm
+          isOpen={showReportForm}
+          onClose={() => setShowReportForm(false)}
+          onSuccess={upsertIncident}
+        />
+      )}
     </div>
   );
 }

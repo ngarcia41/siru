@@ -66,6 +66,40 @@ function getMarkerColor(incident: Incident): { fill: string; opacity: number; bo
   }
 }
 
+/** Escapa texto para insertarlo en el HTML del popup (los datos los cargan los vecinos). */
+function escapar(texto: string): string {
+  return texto.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+}
+
+const ETIQUETA_ESTADO: Record<string, string> = {
+  unverified: "Sin verificar",
+  active: "Activo",
+  review: "En revisión",
+  resolved: "Resuelto",
+  dismissed: "Desestimado",
+};
+
+/** HTML del popup de un incidente */
+function popupHtml(incident: Incident): string {
+  const trustColor =
+    incident.status === "active" ? "#22c55e" : incident.status === "resolved" ? "#6b7280" : "#94a3b8";
+  const desc = incident.description.length > 80 ? `${incident.description.slice(0, 80)}…` : incident.description;
+  return `
+    <div style="padding:12px; min-width:200px; font-family:'Inter',sans-serif;">
+      <div style="font-weight:700; font-size:14px; margin-bottom:4px; color:#f0f6fc;">${escapar(incident.category)} · N.° ${escapar(incident.id)}</div>
+      <div style="font-size:12px; color:#8b949e; margin-bottom:8px;">${escapar(incident.address || "Ramos Mejía")}</div>
+      <div style="font-size:12px; color:#c9d1d9; margin-bottom:10px; line-height:1.5;">${escapar(desc)}</div>
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="background:${trustColor}22; color:${trustColor}; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;">
+          ${ETIQUETA_ESTADO[incident.status] ?? ""}
+        </span>
+        <span style="background:#3b82f622; color:#93c5fd; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;">
+          ★ ${incident.trustPoints} pts
+        </span>
+      </div>
+    </div>`;
+}
+
 /** Genera el SVG del ícono del marcador */
 function createMarkerSvg(incident: Incident, isSelected: boolean): string {
   const { fill, opacity, border } = getMarkerColor(incident);
@@ -75,10 +109,9 @@ function createMarkerSvg(incident: Incident, isSelected: boolean): string {
   // Ícono de categoría embebido en el SVG
   const categoryIcons: Record<string, string> = {
     Bache: "🕳",
-    Iluminación: "💡",
-    Basura: "🗑",
-    Vandalismo: "🔴",
-    Inundación: "💧",
+    Luminaria: "💡",
+    Anegamiento: "💧",
+    "Basura acumulada": "🗑",
     Otro: "⚠",
   };
   const emoji = categoryIcons[incident.category] || "⚠";
@@ -192,42 +225,15 @@ export default function MapView({
         });
 
         if (markersRef.current.has(incident.id)) {
-          // Actualizar ícono del marcador existente
-          markersRef.current.get(incident.id)!.setIcon(icon);
+          // Actualizar ícono y contenido del marcador existente (estado, puntos)
+          const existente = markersRef.current.get(incident.id)!;
+          existente.setIcon(icon);
+          existente.setPopupContent(popupHtml(incident));
         } else {
           // Crear nuevo marcador
           const marker = L.marker([incident.geom.lat, incident.geom.lng], { icon });
 
-          // Popup con información del incidente
-          const trustColor =
-            incident.status === "active"
-              ? "#22c55e"
-              : incident.status === "resolved"
-              ? "#6b7280"
-              : "#94a3b8";
-
-          const statusLabel =
-            incident.status === "active"
-              ? "Activo"
-              : incident.status === "unverified"
-              ? "Sin Verificar"
-              : "Resuelto";
-
-          marker.bindPopup(`
-            <div style="padding:12px; min-width:200px; font-family:'Inter',sans-serif;">
-              <div style="font-weight:700; font-size:14px; margin-bottom:4px; color:#f0f6fc;">${incident.category}</div>
-              <div style="font-size:12px; color:#8b949e; margin-bottom:8px;">${incident.address || "Ramos Mejía"}</div>
-              <div style="font-size:12px; color:#c9d1d9; margin-bottom:10px; line-height:1.5;">${incident.description.slice(0, 80)}${incident.description.length > 80 ? "..." : ""}</div>
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span style="background:${trustColor}22; color:${trustColor}; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;">
-                  ${statusLabel}
-                </span>
-                <span style="background:#3b82f622; color:#93c5fd; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;">
-                  ★ ${incident.trustPoints} pts
-                </span>
-              </div>
-            </div>
-          `);
+          marker.bindPopup(popupHtml(incident));
 
           marker.on("click", () => {
             onIncidentSelect(incident);
