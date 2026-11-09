@@ -67,16 +67,7 @@ export interface ExifMetadata {
   height?: number;
 }
 
-/** POST /api/incidents. El usuario se toma de la sesión, nunca del cuerpo. */
-export interface CreateIncidentDto {
-  geom: GeoPoint;
-  gpsAccuracy: number;
-  category: IncidentCategory;
-  description: string;
-  photoHash: string;
-  exifData: ExifMetadata | null;
-  severity: IncidentSeverity;
-}
+/** POST /api/incidents se envía como multipart/form-data (ver app/api/incidents/route.ts). */
 
 /** POST /api/trust. */
 export interface AddTrustDto {

@@ -9,10 +9,12 @@ export const EVENTO_ACTIVIDAD = "siru:actividad";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function api(url: string, init?: RequestInit): Promise<{ res: Response; data: any }> {
+  // Con FormData (alta con foto) el navegador arma el Content-Type multipart con su separador.
+  const esFormulario = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(url, {
     ...init,
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { ...(esFormulario ? {} : { "Content-Type": "application/json" }), ...(init?.headers ?? {}) },
   });
   let data = null;
   try {

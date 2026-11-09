@@ -1,16 +1,19 @@
 /**
  * SIRU — pruebas/api.prueba.ts
- * Pruebas funcionales de la API del Sprint 2 (HU-01, HU-02, HU-03, HU-07, HU-08).
+ * Pruebas funcionales de la API: Sprint 2 (HU-01, HU-02, HU-03, HU-07, HU-08)
+ * y, desde el Sprint 3, el alta con la foto reducida en el teléfono (D-19).
  *
  * ATENCIÓN: crea usuarios, incidentes y registros de auditoría. Correrlas
  * solo contra una base de PRUEBA recién cargada con la semilla, nunca
  * contra datos reales.
  *
- * Uso (con el servidor levantado):  npx tsx pruebas/api.prueba.ts http://localhost:3000
+ * Se corren con `npm run prueba`, que recrea la base siru_prueba y levanta el
+ * servidor. A mano: npx tsx pruebas/api.prueba.ts http://localhost:3001
  */
 import "dotenv/config";
 import { createHash } from "node:crypto";
 import { Client } from "pg";
+import sharp from "sharp";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const CLAVE_VECINOS = "Ramos#Mejia26";
@@ -29,11 +32,12 @@ async function llamar(s: Sesion | null, metodo: string, ruta: string, cuerpo?: u
     method: metodo,
     redirect,
     headers: {
-      "Content-Type": "application/json",
+      // Con FormData, fetch arma el Content-Type multipart con su separador.
+      ...(cuerpo instanceof FormData ? {} : { "Content-Type": "application/json" }),
       "X-Forwarded-For": "190.210.0.10",
       ...(s?.cookie ? { Cookie: s.cookie } : {}),
     },
-    body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+    body: cuerpo === undefined ? undefined : cuerpo instanceof FormData ? cuerpo : JSON.stringify(cuerpo),
   });
   const set = res.headers.getSetCookie?.() ?? [];
   const c = set.find((x) => x.startsWith("siru_sesion="));
@@ -46,6 +50,42 @@ async function llamar(s: Sesion | null, metodo: string, ruta: string, cuerpo?: u
 /** Desplaza un punto `metros` hacia el norte (aprox. 111.320 m por grado). */
 const alNorte = (p: { lat: number; lng: number }, metros: number) => ({ lat: p.lat + metros / 111320, lng: p.lng });
 const hashFoto = (semilla: string) => createHash("sha256").update(`prueba-${semilla}-${Date.now()}`).digest("hex");
+
+/**
+ * Imagen generada para cada prueba: un color liso distinto en cada llamada, así
+ * ningún archivo se repite. Por defecto, un JPEG de 1600 × 1200 px como el que
+ * arma el teléfono (D-19).
+ */
+let imagenesGeneradas = 0;
+async function imagenDePrueba(ancho = 1600, alto = 1200, formato: "jpeg" | "png" = "jpeg"): Promise<Buffer> {
+  imagenesGeneradas++;
+  const n = imagenesGeneradas * 7919 + (Date.now() % 100000);
+  const color = { r: n % 256, g: Math.floor(n / 256) % 256, b: Math.floor(n / 65536) % 256 };
+  const img = sharp({ create: { width: ancho, height: alto, channels: 3, background: color } });
+  return formato === "png" ? img.png().toBuffer() : img.jpeg({ quality: 80 }).toBuffer();
+}
+
+type DatosAlta = {
+  geom: { lat: number; lng: number }; gpsAccuracy: number; category: string; severity: string;
+  description: string; photoHash: string;
+};
+
+/** POST /api/incidents como multipart/form-data, igual que el formulario del teléfono. */
+async function alta(s: Sesion | null, d: DatosAlta, imagen?: Buffer | null, tipo = "image/jpeg") {
+  const f = new FormData();
+  if (imagen !== null) {
+    const bytes = imagen ?? (await imagenDePrueba());
+    f.append("foto", new Blob([new Uint8Array(bytes)], { type: tipo }), "foto.jpg");
+  }
+  f.append("hashOriginal", d.photoHash);
+  f.append("lat", String(d.geom.lat));
+  f.append("lng", String(d.geom.lng));
+  f.append("gpsAccuracy", String(d.gpsAccuracy));
+  f.append("category", d.category);
+  f.append("severity", d.severity);
+  f.append("description", d.description);
+  return llamar(s, "POST", "/api/incidents", f);
+}
 
 async function ingresar(email: string, clave: string): Promise<Sesion> {
   const s: Sesion = { cookie: null };
@@ -91,18 +131,33 @@ async function main() {
   caso("Los incidentes se leen desde PostgreSQL", r.status === 200 && r.data?.total >= 8, `${r.data?.total} incidentes`);
   const base = { lat: -34.6530, lng: -58.5700 };
   const foto = hashFoto("a");
-  const datos = { geom: base, category: "Bache", severity: "high", description: "Bache profundo que obliga a esquivarlo sobre la mano derecha.", photoHash: foto, exifData: null };
-  r = await llamar(nuevo, "POST", "/api/incidents", { ...datos, gpsAccuracy: 40 });
+  const datos = { geom: base, category: "Bache", severity: "high", description: "Bache profundo que obliga a esquivarlo sobre la mano derecha.", photoHash: foto };
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 40 });
   caso("Precisión GPS mayor a 25 m: pide repetir la captura", r.status === 422 && r.data?.error === "PRECISION_INSUFICIENTE", r.data?.message);
-  r = await llamar(nuevo, "POST", "/api/incidents", { ...datos, gpsAccuracy: 12 });
+  // --- D-19: el servidor valida la foto reducida que sube el teléfono ---
+  const pesada = Buffer.concat([await imagenDePrueba(), Buffer.alloc(1_600_000, 1)]);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, pesada);
+  caso("Una solicitud de más de 1,5 MB se rechaza (413)", r.status === 413 && r.data?.error === "IMAGEN_DEMASIADO_GRANDE", `HTTP ${r.status}`);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, await imagenDePrueba(3000, 2000));
+  caso("Un JPEG de 3000 px de lado se rechaza (400)", r.status === 400 && r.data?.error === "IMAGEN_INVALIDA", r.data?.message);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, await imagenDePrueba(700, 500));
+  caso("Un JPEG de menos de 800 px de lado se rechaza (400)", r.status === 400 && r.data?.error === "IMAGEN_INVALIDA", r.data?.message);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, await imagenDePrueba(1600, 1200, "png"), "image/jpeg");
+  caso("Un PNG se rechaza aunque se declare como JPEG (400)", r.status === 400 && r.data?.error === "IMAGEN_INVALIDA", r.data?.message);
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12 }, null);
+  caso("Un alta sin foto se rechaza (400)", r.status === 400 && r.data?.error === "DATOS_INCOMPLETOS", r.data?.message);
+  const sinAltas = (await db.query("SELECT count(*)::int AS n FROM incidente WHERE hash_foto = $1", [foto])).rows[0].n;
+  caso("Ninguna foto rechazada llega a crear el incidente", sinAltas === 0, `${sinAltas} incidentes`);
+
+  r = await alta(nuevo, { ...datos, gpsAccuracy: 12 });
   const incId = r.data?.data?.id;
   caso("Alta válida: Sin verificar con 1 punto de confianza", r.status === 201 && r.data?.data?.trustPoints === 1 && r.data?.data?.status === "unverified", `incidente ${incId}`);
-  r = await llamar(nuevo, "POST", "/api/incidents", { ...datos, geom: alNorte(base, 500), category: "Luminaria", gpsAccuracy: 10 });
+  r = await alta(nuevo, { ...datos, geom: alNorte(base, 500), category: "Luminaria", gpsAccuracy: 10 });
   caso("Una foto ya usada se rechaza por su huella SHA-256", r.status === 409 && r.data?.error === "FOTO_DUPLICADA", r.data?.message);
-  r = await llamar(nuevo, "POST", "/api/incidents", { ...datos, geom: alNorte({ lat: -34.6479, lng: -58.5618 }, 30), photoHash: hashFoto("b"), gpsAccuracy: 10 });
+  r = await alta(nuevo, { ...datos, geom: alNorte({ lat: -34.6479, lng: -58.5618 }, 30), photoHash: hashFoto("b"), gpsAccuracy: 10 });
   caso("Mismo tipo a menos de 50 m: propone confirmar el existente (ST_DWithin)", r.status === 409 && r.data?.error === "GEOFENCE_DUPLICATE" && r.data?.nearbyIncident?.id === "1",
     `a ${Math.round(r.data?.distanceMeters ?? -1)} m del incidente ${r.data?.nearbyIncident?.id}`);
-  r = await llamar(nuevo, "POST", "/api/incidents", { ...datos, geom: alNorte({ lat: -34.6479, lng: -58.5618 }, 30), category: "Luminaria", photoHash: hashFoto("c"), gpsAccuracy: 10 });
+  r = await alta(nuevo, { ...datos, geom: alNorte({ lat: -34.6479, lng: -58.5618 }, 30), category: "Luminaria", photoHash: hashFoto("c"), gpsAccuracy: 10 });
   caso("Otra categoría en el mismo lugar sí se registra", r.status === 201, `HTTP ${r.status}`);
 
   // --- HU-03: confirmación ---
@@ -138,7 +193,7 @@ async function main() {
   caso("No acepta repetir una de las últimas 3 claves", r.status === 400 && r.data?.error === "CLAVE_REPETIDA", r.data?.message);
   r = await llamar(op, "POST", "/api/auth/cambiar-clave", { actual: CLAVE_OPERADOR_TEMPORAL, nueva: "Gestion#Barrio27" });
   caso("Cambio de clave válido", r.status === 200, r.data?.message);
-  r = await llamar(op, "POST", "/api/incidents", { ...datos, geom: alNorte(base, 2000), photoHash: hashFoto("d"), gpsAccuracy: 10 });
+  r = await alta(op, { ...datos, geom: alNorte(base, 2000), photoHash: hashFoto("d"), gpsAccuracy: 10 });
   caso("Un operador no registra incidentes", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
   r = await llamar(op, "PATCH", `/api/incidents/${incId}`, { action: "resolve", observacion: "Bacheo verificado en el lugar." });
   caso("El operador registra el cierre: pasa a Resuelto", r.status === 200 && r.data?.data?.status === "resolved", `HTTP ${r.status}`);
@@ -185,7 +240,7 @@ async function main() {
   const v4 = await ingresar("vecino4@siru.local", CLAVE_VECINOS);
   const estados: number[] = [];
   for (let i = 0; i < 6; i++) {
-    const rr = await llamar(v4, "POST", "/api/incidents", {
+    const rr = await alta(v4, {
       ...datos, category: "Otro", geom: alNorte({ lat: -34.66, lng: -58.58 }, i * 300), photoHash: hashFoto(`lim${i}`), gpsAccuracy: 10,
     });
     estados.push(rr.status);

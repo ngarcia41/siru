@@ -40,6 +40,23 @@ export const COSTO_BCRYPT = 12;
 /** Verificación de correo. */
 export const HORAS_VALIDEZ_VERIFICACION = 24;
 
-export const CATEGORIAS = ["Bache", "Luminaria", "Anegamiento", "Basura acumulada", "Otro"] as const;
+/**
+ * Imagen del reporte (D-04 y D-19). El teléfono controla el original y lo
+ * reduce antes de subirlo; el servidor solo acepta la versión reducida.
+ */
+export const IMAGEN = {
+  /** Tamaño mínimo del original, controlado en el teléfono (D-04). */
+  ORIGINAL_MINIMO_BYTES: 50 * 1024,
+  /** Lado mayor de la versión reducida: el teléfono la deja en 1600 px como máximo. */
+  LADO_MAYOR_MAXIMO_PX: 1600,
+  /** El servidor rechaza una imagen cuyo lado mayor sea menor (foto de muy baja resolución). */
+  LADO_MAYOR_MINIMO_PX: 800,
+  /** Calidad JPEG de la versión reducida en el teléfono (0 a 1). */
+  CALIDAD_JPEG_TELEFONO: 0.8,
+  /** Tamaño máximo de la solicitud de alta, con la foto incluida (1,5 MB). */
+  SOLICITUD_MAXIMA_BYTES: 1.5 * 1024 * 1024,
+} as const;
+
+export const CATEGORIAS =["Bache", "Luminaria", "Anegamiento", "Basura acumulada", "Otro"] as const;
 
 export type Rol = keyof typeof INACTIVIDAD_MINUTOS;

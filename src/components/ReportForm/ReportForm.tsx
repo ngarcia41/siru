@@ -4,9 +4,9 @@
  *
  * Funcionalidades implementadas (TFG §5):
  *   1. Captura GPS real via navigator.geolocation.getCurrentPosition
- *   2. Validación de archivo de imagen (tipo, tamaño, hash SHA-256)
+ *   2. Foto: huella SHA-256 y EXIF del original, y versión reducida que se sube (D-19)
  *   3. Geofencing de 50m: bloquea duplicado y ofrece confirmación de confianza
- *   4. Envío al API Route POST /api/incidents
+ *   4. Envío a POST /api/incidents como multipart/form-data
  *
  * Flujo de pasos:
  *   STEP 1: Captura GPS obligatoria
@@ -19,7 +19,7 @@
 import { useState, useRef, useCallback } from "react";
 import type { GeoPoint, IncidentCategory, IncidentSeverity, Incident } from "@/lib/types";
 import { GEOFENCE_RADIUS_M, formatDistance } from "@/lib/spatial";
-import { computeFileHash, validateImageFile, formatFileSize } from "@/lib/exif";
+import { ErrorFoto, formatearTamano, prepararFoto, type FotoPreparada } from "@/lib/cliente/imagen";
 import { api } from "@/lib/cliente/api";
 import { CATEGORIAS, PRECISION_GPS_MAXIMA } from "@/lib/reglas";
 import styles from "./ReportForm.module.css";
@@ -69,9 +69,12 @@ export default function ReportForm({
   const [category, setCategory] = useState<IncidentCategory>("Bache");
   const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState<IncidentSeverity>("medium");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [posicionTomadaEn, setPosicionTomadaEn] = useState<number | null>(null);
+  const [foto, setFoto] = useState<FotoPreparada | null>(null);
+  const [nombreFoto, setNombreFoto] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [photoHash, setPhotoHash] = useState<string | null>(null);
+  const [preparandoFoto, setPreparandoFoto] = useState(false);
+  const photoHash = foto?.hashOriginal ?? null;
 
   // Estado de UI
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -120,6 +123,7 @@ export default function ReportForm({
         };
         setLocation(coords);
         setGpsAccuracy(precision);
+        setPosicionTomadaEn(position.timestamp);
 
         // Auto-avanzar al siguiente paso
         setTimeout(() => setStep("details"), 800);
@@ -150,31 +154,35 @@ export default function ReportForm({
   // STEP 3: Procesamiento de foto
   // -----------------------------------------------------------------------
 
+  /** Libera la vista previa anterior (una URL de objeto ocupa memoria hasta que se revoca). */
+  const quitarFoto = useCallback(() => {
+    setPhotoPreview((anterior) => {
+      if (anterior) URL.revokeObjectURL(anterior);
+      return null;
+    });
+    setFoto(null);
+    setNombreFoto(null);
+  }, []);
+
+  /**
+   * D-19: sobre el original se calculan la huella y el EXIF; después se genera
+   * la versión reducida, que es la que se muestra y se sube.
+   */
   const handlePhotoSelect = useCallback(async (file: File) => {
     setPhotoError(null);
-
-    // Validar archivo
-    const validation = validateImageFile(file);
-    if (!validation.valid) {
-      setPhotoError(validation.errors.join(" "));
-      return;
-    }
-
+    quitarFoto();
+    setPreparandoFoto(true);
     try {
-      // Calcular hash SHA-256 (TFG §5.3 — anti-duplicados)
-      const hash = await computeFileHash(file);
-
-      // Preview
-      const reader = new FileReader();
-      reader.onload = (e) => setPhotoPreview(e.target?.result as string);
-      reader.readAsDataURL(file);
-
-      setPhotoFile(file);
-      setPhotoHash(hash);
-    } catch {
-      setPhotoError("Error procesando el archivo. Intenta con otra imagen.");
+      const preparada = await prepararFoto(file);
+      setFoto(preparada);
+      setNombreFoto(file.name);
+      setPhotoPreview(URL.createObjectURL(preparada.reducida));
+    } catch (e) {
+      setPhotoError(e instanceof ErrorFoto ? e.message : "No se pudo procesar la foto. Intentá con otra imagen.");
+    } finally {
+      setPreparandoFoto(false);
     }
-  }, []);
+  }, [quitarFoto]);
 
   // -----------------------------------------------------------------------
   // STEP 4: Geofencing y envío
@@ -187,25 +195,30 @@ export default function ReportForm({
    * confirmarlo en lugar de duplicarlo.
    */
   const checkGeofenceAndSubmit = useCallback(async () => {
-    if (!location || !photoHash || gpsAccuracy === null) return;
+    if (!location || !foto || gpsAccuracy === null) return;
 
     setSubmitting(true);
     setSubmitError(null);
     setGeofenceAlert(null);
 
     try {
-      const { res, data } = await api("/api/incidents", {
-        method: "POST",
-        body: JSON.stringify({
-          geom: location,
-          gpsAccuracy,
-          category,
-          description,
-          photoHash,
-          exifData: null,
-          severity,
-        }),
-      });
+      const datos = new FormData();
+      datos.append("foto", foto.reducida, "foto.jpg");
+      datos.append("hashOriginal", foto.hashOriginal);
+      datos.append("lat", String(location.lat));
+      datos.append("lng", String(location.lng));
+      datos.append("gpsAccuracy", String(gpsAccuracy));
+      datos.append("category", category);
+      datos.append("severity", severity);
+      datos.append("description", description);
+      if (foto.exifFecha) datos.append("exifFecha", foto.exifFecha);
+      if (foto.exifLat !== null && foto.exifLng !== null) {
+        datos.append("exifLat", String(foto.exifLat));
+        datos.append("exifLng", String(foto.exifLng));
+      }
+      if (posicionTomadaEn !== null) datos.append("posicionTomadaEn", new Date(posicionTomadaEn).toISOString());
+
+      const { res, data } = await api("/api/incidents", { method: "POST", body: datos });
 
       if (res.status === 409 && data?.error === "GEOFENCE_DUPLICATE") {
         setGeofenceAlert({
@@ -230,7 +243,7 @@ export default function ReportForm({
       setSubmitError("Error de conexión. Verificá tu internet e intentá nuevamente.");
       setSubmitting(false);
     }
-  }, [location, photoHash, gpsAccuracy, category, description, severity]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location, foto, gpsAccuracy, posicionTomadaEn, category, description, severity]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Suma 1 punto de confianza al incidente existente detectado por proximidad.
@@ -273,9 +286,8 @@ export default function ReportForm({
     setCategory("Bache");
     setDescription("");
     setSeverity("medium");
-    setPhotoFile(null);
-    setPhotoPreview(null);
-    setPhotoHash(null);
+    setPosicionTomadaEn(null);
+    quitarFoto();
     setGeofenceAlert(null);
     setGpsError(null);
     setPhotoError(null);
@@ -355,7 +367,9 @@ export default function ReportForm({
             {/* STEP 3: Foto */}
             {step === "photo" && (
               <StepPhoto
-                photoFile={photoFile}
+                foto={foto}
+                nombreFoto={nombreFoto}
+                preparando={preparandoFoto}
                 photoPreview={photoPreview}
                 photoHash={photoHash}
                 error={photoError}
@@ -373,7 +387,7 @@ export default function ReportForm({
                 category={category}
                 description={description}
                 severity={severity}
-                photoFile={photoFile}
+                nombreFoto={nombreFoto}
                 photoHash={photoHash}
                 submitting={submitting}
                 error={submitError}
@@ -569,10 +583,12 @@ function StepDetails({
 
 // --- Step 3: Foto ---
 function StepPhoto({
-  photoFile, photoPreview, photoHash, error,
+  foto, nombreFoto, preparando, photoPreview, photoHash, error,
   fileInputRef, onFileSelect, onBack, onNext,
 }: {
-  photoFile: File | null;
+  foto: FotoPreparada | null;
+  nombreFoto: string | null;
+  preparando: boolean;
   photoPreview: string | null;
   photoHash: string | null;
   error: string | null;
@@ -586,7 +602,7 @@ function StepPhoto({
       <div className={styles.stepIcon}>📷</div>
       <h3 className={styles.stepTitle}>Evidencia fotográfica</h3>
       <p className={styles.stepDesc}>
-        La foto es <strong>obligatoria</strong>. Se calcula su huella SHA-256 para rechazar una imagen ya usada en otro reporte.
+        La foto es <strong>obligatoria</strong>. Se calcula su huella SHA-256 para rechazar una imagen ya usada en otro reporte, y se reduce antes de enviarla para ahorrar datos.
       </p>
 
       {error && <div className={styles.errorBox}>{error}</div>}
@@ -594,22 +610,30 @@ function StepPhoto({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/jpg,image/png,image/webp"
+        accept="image/*"
         style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) onFileSelect(file);
+          e.target.value = ""; // permite volver a elegir el mismo archivo
         }}
         id="input-photo-upload"
       />
 
-      {photoPreview ? (
+      {preparando ? (
+        <div className={styles.photoDropzone} aria-live="polite">
+          <span className={styles.dropzoneIcon}>⏳</span>
+          <span>Preparando la foto…</span>
+        </div>
+      ) : photoPreview && foto ? (
         <div className={styles.photoPreview}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photoPreview} alt="Preview del incidente" className={styles.previewImg} />
           <div className={styles.photoMeta}>
-            <span className={styles.metaItem}>📁 {photoFile?.name}</span>
-            <span className={styles.metaItem}>📏 {formatFileSize(photoFile?.size || 0)}</span>
+            <span className={styles.metaItem}>📁 {nombreFoto}</span>
+            <span className={styles.metaItem}>
+              📏 {formatearTamano(foto.tamanoOriginal)} → {formatearTamano(foto.reducida.size)} ({foto.ancho} × {foto.alto} px)
+            </span>
             <span className={styles.metaItem} title={photoHash || ""}>
               🔐 SHA-256: {photoHash?.slice(0, 16)}...
             </span>
@@ -630,7 +654,7 @@ function StepPhoto({
         >
           <span className={styles.dropzoneIcon}>🖼️</span>
           <span>Seleccionar foto del incidente</span>
-          <span className={styles.dropzoneHint}>JPEG, PNG o WebP · Máx. 10 MB</span>
+          <span className={styles.dropzoneHint}>Cualquier formato que abra tu navegador · Mín. 50 KB</span>
         </button>
       )}
 
@@ -639,7 +663,7 @@ function StepPhoto({
         <button
           className={styles.btnPrimary}
           onClick={onNext}
-          disabled={!photoHash}
+          disabled={!photoHash || preparando}
           id="btn-photo-next"
         >
           Continuar →
@@ -652,14 +676,14 @@ function StepPhoto({
 // --- Step 4: Confirmar ---
 function StepConfirm({
   location, category, description, severity,
-  photoFile, photoHash, submitting, error,
+  nombreFoto, photoHash, submitting, error,
   onBack, onSubmit,
 }: {
   location: GeoPoint | null;
   category: string;
   description: string;
   severity: string;
-  photoFile: File | null;
+  nombreFoto: string | null;
   photoHash: string | null;
   submitting: boolean;
   error: string | null;
@@ -693,7 +717,7 @@ function StepConfirm({
         </div>
         <div className={styles.summaryRow}>
           <span className={styles.summaryKey}>📷 Foto</span>
-          <span className={styles.summaryVal}>{photoFile?.name || "Adjunta"}</span>
+          <span className={styles.summaryVal}>{nombreFoto || "Adjunta"}</span>
         </div>
         <div className={styles.summaryRow}>
           <span className={styles.summaryKey}>🔐 Hash</span>
