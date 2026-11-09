@@ -5,8 +5,8 @@
   incidente quede respaldado por evidencia, con quién la informó y quién la validó.
 - **Fechas:** el Gantt del documento planificó este sprint del 19/10 al 01/11. Las fechas reales se registran en "Cierre".
   El desvío corresponde al riesgo R05, cuyo plan prioriza las historias del núcleo y permite postergar HU-06.
-- **Antes de la primera tarea:** aprobar las decisiones en estado "Propuesta" de `decisiones.md`
-  (D-06 a D-20; D-08 ya está aprobada). Las fotos se manejan según `imagenes.md`: se implementa lo que dice el
+- **Decisiones:** D-06 a D-20 de `decisiones.md` quedaron aprobadas el 09/11/2026 (D-08, con la Opción A).
+  Las fotos se manejan según `imagenes.md`: se implementa lo que dice el
   documento, más el único ajuste D-19, sin funciones nuevas.
 
 ## Historias de usuario (texto del documento, sin cambios)

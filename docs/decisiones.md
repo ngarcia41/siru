@@ -49,16 +49,16 @@ Ambos figuran en el DER y en el diccionario de datos de la Entrega 4.
 `NEXT_PUBLIC_PRECISION_GPS_MAXIMA` permite subir temporalmente el límite de 25 m para probar con la ubicación por IP.
 En la demo y en producción vale 25. Impacto en el documento: ninguno.
 
-## Propuestas para el Sprint 3
+## Decisiones para el Sprint 3 (aprobadas el 09/11/2026)
 
-### D-06 · Detalles del índice de prioridad (Interpretación · Propuesta · Sprint 3)
+### D-06 · Detalles del índice de prioridad (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
 - **Componente T:** usa días enteros desde la activación, `LEAST(floor(días) / 30, 1)`. Así se reproducen exactamente
   los dos ejemplos del documento: IP = 83 e IP ≈ 50 (49,83).
 - **Fuera de ACTIVO:** el IP queda en NULL. Si una resolución rechazada devuelve el incidente a ACTIVO, se recalcula.
 - **Redondeo:** a 2 decimales en la base (NUMERIC(5,2)). En pantalla se muestra entero.
 - Impacto en el documento: una oración en "Regla de priorización".
 
-### D-07 · Programación de las tareas diarias (Implementación · Propuesta · Sprint 3)
+### D-07 · Programación de las tareas diarias (Implementación · Aprobada el 09/11/2026 · Sprint 3)
 - Decisión: `scripts/tareas-diarias.ts` (`npm run tareas:diarias`) recalcula los IP a las 00:30, hora de Argentina.
   Es idempotente (se puede correr dos veces sin efecto adicional). En el servidor lo dispara cron; en desarrollo se
   corre a mano o con el Programador de tareas de Windows.
@@ -77,39 +77,43 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
   podría comparar entre altas de incidentes.
 - Descartado: guardarlas en AUDITORIA, porque es inmutable y no permitiría borrarlas a los 90 días.
 
-### D-09 · Suspensión por reportes desestimados (Interpretación · Propuesta · Sprint 3)
+### D-09 · Suspensión por reportes desestimados (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
 - Documento: el plan de R02 suspende las cuentas con 3 reportes desestimados en 30 días, y EstadoCuenta incluye
   SUSPENDIDA. No dice cuánto dura la suspensión ni cómo termina.
-- Propuesta:
+- Decisión:
   - Al desestimar, se cuentan los incidentes del autor en estado DESESTIMADO con `fecha_cierre` en los últimos 30 días.
     Con 3 o más, la cuenta pasa a SUSPENDIDA, se cierran sus sesiones y se audita `SUSPENDE_CUENTA`.
   - Al intentar ingresar, recibe un mensaje propio (no el de bloqueo).
   - La suspensión dura hasta que el administrador técnico la levanta con `npm run admin:rehabilitar-cuenta`, a pedido
     de la sociedad de fomento. La acción se audita.
-- Alternativa: una suspensión de duración fija, por ejemplo 30 días.
+- Alternativa descartada: una suspensión de duración fija, por ejemplo 30 días, porque necesitaría guardar una fecha
+  de fin de la suspensión, y el DER no tiene ese campo. La rehabilitación por el administrador no cambia la base.
 - Impacto en el documento: una oración en "Controles sobre la ubicación, la frecuencia y el uso".
 
-### D-10 · Quién informa y quién valida la resolución (Interpretación · Propuesta · Sprint 3)
+### D-10 · Quién informa y quién valida la resolución (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
 - **Vecino:** solo sobre un incidente ACTIVO, a menos de 50 m, con precisión de 25 m o menos y foto.
 - **Operador:** carga la "información oficial" con evidencia (foto o PDF), sin control de distancia, según la tabla de estados y la de perfiles.
 - **Validación:** el documento no exige que valide un operador distinto del que informó. Con un solo operador en la
   demo, puede validar lo que él mismo informó, y la auditoría deja constancia de ambos pasos.
+- Alternativa descartada: exigir un operador distinto para validar (separación de funciones). Se reconoce como una
+  limitación de la demo, que tiene un solo operador, y se presenta así en la defensa.
+- Impacto en el documento: una línea en las limitaciones.
 
-### D-11 · Unicidad de la evidencia (Implementación · Propuesta · Sprint 3)
+### D-11 · Unicidad de la evidencia (Implementación · Aprobada el 09/11/2026 · Sprint 3)
 La evidencia no puede repetir el hash de ninguna imagen ya registrada, ni de un incidente ni de otra resolución.
 Esto aplica la regla del documento de "rechazar la carga de un archivo idéntico a otro ya registrado" e impide usar la
 foto original del problema como prueba de que se arregló.
 
-### D-12 · Desde qué estados se desestima (Interpretación · Propuesta · Sprint 3)
+### D-12 · Desde qué estados se desestima (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
 Se puede desestimar un incidente en SIN_VERIFICAR o ACTIVO. Uno EN_REVISION primero se valida o se rechaza.
 La observación es obligatoria y se guarda en el detalle de la auditoría. `fecha_cierre` se completa también al desestimar.
 
-### D-13 · Reclasificar la categoría (Interpretación · Propuesta · Sprint 3)
+### D-13 · Reclasificar la categoría (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
 La tabla de perfiles permite al operador reclasificar la categoría y la severidad. Si con la nueva categoría queda
 un incidente abierto de esa categoría a menos de 50 m, se rechaza con 409 y se muestra el existente, para que el
 operador desestime el duplicado. El cambio de categoría no recalcula el IP; el de severidad sí.
 
-### D-14 · Almacenamiento de imágenes (Implementación · Propuesta · Sprint 3)
+### D-14 · Almacenamiento de imágenes (Implementación · Aprobada el 09/11/2026 · Sprint 3)
 - Se define una interfaz de almacenamiento con dos implementaciones:
   - local, para desarrollo, en `almacenamiento/`, fuera de `public/` y de git;
   - Spaces, compatible con S3, para producción. Se implementa en el Sprint 4.
@@ -122,25 +126,25 @@ operador desestime el duplicado. El cambio de categoría no recalcula el IP; el 
   - la foto privada, solo para el operador. Esto coincide con el documento: "se publica una miniatura".
 - Detalle completo en `imagenes.md`.
 
-### D-15 · Dependencias nuevas (Implementación · Propuesta · Sprint 3)
+### D-15 · Dependencias nuevas (Implementación · Aprobada el 09/11/2026 · Sprint 3)
 - `sharp`, en el servidor: decodifica y recodifica la imagen, quita los metadatos y genera la miniatura.
 - `exifr`, en el navegador: lee la fecha y las coordenadas EXIF del original antes de reducirlo.
 - Impacto en el documento: agregarlas a la tabla "Herramientas de desarrollo", con su referencia APA.
 
-### D-16 · Fecha EXIF sin zona horaria (Interpretación · Propuesta · Sprint 3)
+### D-16 · Fecha EXIF sin zona horaria (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
 Si la foto no informa su desfase horario, la fecha de captura se interpreta en la hora de Argentina (UTC−3).
 
-### D-17 · Pruebas sobre una base aislada (Implementación · Propuesta · Sprint 3)
+### D-17 · Pruebas sobre una base aislada (Implementación · Aprobada el 09/11/2026 · Sprint 3)
 `npm run prueba` recrea `siru_prueba`, levanta el servidor contra esa base, corre las pruebas y lo apaga. Se niega a
 correr si la base de destino no es `siru_prueba`. Impacto en el documento: ninguno.
 
-### D-18 · Fin del cierre directo del Sprint 2 (Implementación · Propuesta · Sprint 3)
+### D-18 · Fin del cierre directo del Sprint 2 (Implementación · Aprobada el 09/11/2026 · Sprint 3)
 La acción `resolve` del Sprint 2, en la que el operador cierra sin evidencia, se reemplaza por el circuito de HU-05.
 Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifican: quién validó y cuándo.
 
 ## Imágenes (09/11/2026; detalle en `imagenes.md`)
 
-### D-19 · Achicar la foto en el teléfono (Cambio · Propuesta · Sprint 3)
+### D-19 · Achicar la foto en el teléfono (Cambio · Aprobada el 09/11/2026 · Sprint 3)
 - Documento: en la arquitectura dice "el original queda privado y se publica una miniatura sin metadatos", y en el
   diccionario `FotoRuta` es la "ruta de la imagen original".
 - Decisión:
@@ -159,7 +163,7 @@ Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifi
   - un límite propio para los informes de resolución, porque el circuito ya los limita;
   - limitar el área del mapa.
 
-### D-20 · Versiones del código con etiquetas de git (Implementación · Propuesta · desde el Sprint 2)
+### D-20 · Versiones del código con etiquetas de git (Implementación · Aprobada el 09/11/2026 · desde el Sprint 2)
 - Documento: dice que el código se versiona en GitHub y que se hacen copias manuales de los hitos.
 - Decisión: una sola carpeta de trabajo (`D:\Desarrollo\siru-tfg`). Cada hito se marca con una etiqueta según el
   versionado semántico (Preston-Werner, s.f.):
