@@ -47,8 +47,8 @@ para que el cierre quede registrado de forma confiable.
 | HU-05 | T10 | Validar o rechazar la resolución (observación obligatoria al rechazar) (D-18) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-05 | T11 | Desestimar con observación obligatoria y suspender tras 3 desestimados en 30 días (D-09, D-12) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-05 | T12 | Pantallas: informar la resolución (vecino) y bandeja del operador con la evidencia y las acciones; incluye los botones de reclasificar de la T07 y la cámara en el informe (D-22) | Alta | 1,5 días | Hecha (09/11/2026) |
-| Técnica | T13 | Pruebas de HU-04 y HU-05, y adecuación de las 42 pruebas anteriores | Alta | 1 día | Pendiente |
-| Técnica | T14 | Semilla con imágenes e índices, README y cierre del sprint | Media | 0,5 día | Pendiente |
+| Técnica | T13 | Pruebas de HU-04 y HU-05, y adecuación de las 42 pruebas anteriores (escritas junto con cada tarea) | Alta | 1 día | Hecha (09/11/2026) |
+| Técnica | T14 | Semilla con imágenes e índices, README y cierre del sprint | Media | 0,5 día | Parcial (09/11/2026): índices en la semilla (T05), README y cierre hechos; las imágenes de la semilla pasan al Sprint 4 |
 | HU-02 | T15 | Verificar el duplicado por cercanía al elegir la categoría (paso 2), sin crear nada, y color de éxito en "Confirmación registrada" (D-24) | Media | 0,5 día | Hecha (09/11/2026) |
 | HU-04 | DEF-01 | Defecto encontrado al probar la T08: la capa del mapa de calor no se dibujaba desde el Sprint 1. Causa: `leaflet.heat` es un script clásico que se registra sobre una variable global `L`, que no existe dentro del bundle de Next, y el error quedaba oculto en un `catch`. Corrección: se publica en `window.L` el objeto de Leaflet del mapa antes de cargarlo, y el error ya no se oculta | Alta | 0,25 día | Corregido (09/11/2026) |
 
@@ -200,18 +200,80 @@ para que el cierre quede registrado de forma confiable.
 Las 42 pruebas del Sprint 2 siguen pasando. Las que enviaban JSON al alta se adaptan a multipart con un JPEG de
 1600 px generado en la prueba, distinto en cada caso, y su `hashOriginal`.
 
-## Cierre (completar al terminar)
+## Cierre
 
-- **Fechas reales:** del __/__ al __/__.
-- **Sprint Backlog final:** la tabla de arriba, con los estados y estimados reales.
-- **Pruebas:** __ en total. Qué cubren: …
-- **Defectos encontrados y corregidos:** DEF-01 (mapa de calor que no se dibujaba desde el Sprint 1; ver el Sprint Backlog).
-- **Decisiones aplicadas:** …
-- **Pantallas para el documento:**
-  - panel ordenado por prioridad;
-  - mapa de calor ponderado;
-  - informe de la resolución (vecino);
-  - bandeja "En revisión" (operador);
-  - rechazo con observación;
-  - desestimación;
-  - auditoría de un ciclo completo con resolución.
+- **Fechas reales:** del 09/11/2026 al 09/11/2026. El Gantt del documento lo planificaba del 19/10 al 01/11; el
+  desvío corresponde al riesgo R05 (ver el encabezado de este archivo).
+- **Etiqueta:** `v0.3.0` (D-20). Copia del hito: `siru-v0.3.0.zip`.
+
+### Sprint Backlog final (formato del documento)
+
+| Historia | ID | Tarea | Prioridad | Estimado | Estado |
+|---|---|---|---|---|---|
+| Técnica | T01 | Pruebas sobre una base aislada (`npm run prueba`) | Alta | 0,5 día | Hecha (09/11/2026) |
+| HU-05 | T02 | Foto reducida en el teléfono, con la huella y el EXIF del original, y alta en multipart | Alta | 1,5 días | Hecha (09/11/2026) |
+| HU-05 | T03 | Controles EXIF en el servidor y `fecha_captura_foto`; cámara en el selector de foto | Media | 0,5 día | Hecha (09/11/2026) |
+| HU-05 | T04 | Foto privada y miniatura sin metadatos, servidas por una ruta autenticada | Alta | 1 día | Hecha (09/11/2026) |
+| HU-04 | T05 | Índice de prioridad al activar y con cada confirmación | Alta | 1 día | Hecha (09/11/2026) |
+| HU-04 | T06 | Tarea diaria de las 00:30 que recalcula los índices | Alta | 0,5 día | Hecha (09/11/2026) |
+| HU-04 | T07 | Reclasificación de severidad y categoría por el operador | Alta | 1 día | Hecha (09/11/2026) |
+| HU-04 | T08 | Panel ordenado por índice con su banda y mapa de calor ponderado | Alta | 1 día | Hecha (09/11/2026) |
+| HU-05 | T09 | Informe de la resolución por el vecino y por el operador | Alta | 1,5 días | Hecha (09/11/2026) |
+| HU-05 | T10 | Validar o rechazar la resolución; fin del cierre directo | Alta | 1 día | Hecha (09/11/2026) |
+| HU-05 | T11 | Desestimar y suspender tras 3 desestimados en 30 días | Alta | 1 día | Hecha (09/11/2026) |
+| HU-05 | T12 | Pantallas del informe (vecino) y bandeja del operador | Alta | 1,5 días | Hecha (09/11/2026) |
+| Técnica | T13 | Pruebas de HU-04 y HU-05 y adecuación de las del Sprint 2 | Alta | 1 día | Hecha (09/11/2026) |
+| Técnica | T14 | Semilla con imágenes e índices, README y cierre | Media | 0,5 día | Parcial: faltan las imágenes de la semilla (pasan al Sprint 4) |
+| HU-02 | T15 | Duplicado verificado al elegir la categoría (agregada durante el sprint) | Media | 0,5 día | Hecha (09/11/2026) |
+| HU-04 | DEF-01 | Defecto: el mapa de calor no se dibujaba desde el Sprint 1 | Alta | 0,25 día | Corregido (09/11/2026) |
+
+HU-04 y HU-05 quedan completas: todos sus criterios de aceptación tienen al menos un caso de prueba y se probaron
+en pantalla (panel, mapa de calor y circuito de resolución).
+
+### Pruebas
+
+**125 casos en total, todos en verde** (`npm run prueba`, sobre la base aislada `siru_prueba`). Son los 42 del Sprint 2
+(dos adaptados al nuevo circuito de cierre, D-18) y 83 nuevos:
+
+| Tema | Casos | Qué cubren |
+|---|---|---|
+| Foto del alta (T02) | 6 | Solicitud de más de 1,5 MB, JPEG de 3000 px y de menos de 800 px, PNG, alta sin foto, que ninguna foto rechazada cree el incidente |
+| Reglas EXIF (T03, T04) | 8 | Fecha de más de 24 h, coordenadas a 80 m, coordenadas incompletas, foto sin EXIF, fecha sin desfase en UTC−3, fecha futura y tolerancia de 10 minutos, JPEG dañado |
+| Almacenamiento y acceso (T04) | 9 | `foto_ruta`, URLs de la API, acceso sin sesión, foto privada para vecino y operador, caché, medidas y ausencia de EXIF, claves inválidas, imagen inexistente |
+| Índice de prioridad (T05, T06, T08) | 11 | Ejemplos del documento (83,00 y 49,83), topes de C y T, cálculo al activar, recálculo al confirmar, tarea diaria e idempotencia, solo los activos con índice, orden del panel, bandas y sus bordes |
+| Reclasificación (T07) | 7 | Permisos, recálculo, auditoría de severidad y de categoría, duplicado al cambiar la categoría, incidente cerrado, datos inválidos |
+| Duplicado en el paso 2 (T15) | 10 | Permisos, duplicado a 30 m, otra categoría, 80 m, reporte propio, ya confirmado, datos inválidos, que no cree nada, control del alta |
+| Resolución (T09, T10, T12) | 21 | Distancia, foto obligatoria, evidencia repetida, precisión, informe válido, auditoría, segundo informe, PDF del operador y su acceso, bandeja, validar, rechazar con y sin observación, evidencia conservada, sin resolución pendiente |
+| Desestimación y suspensión (T11) | 11 | Permisos, observación, estado En revisión, desestimación auditada, que no aparezca en el panel, suspensión al tercero, mensaje propio, rehabilitación y conteo posterior |
+
+### Decisiones aplicadas (ver `decisiones.md`)
+
+- **Implementadas en este sprint:** D-06 (detalles del índice), D-07 (tareas diarias), D-09 (suspensión), D-10
+  (quién informa y valida), D-11 (unicidad de la evidencia), D-12 (estados desde los que se desestima), D-13
+  (reclasificar la categoría), D-14 (almacenamiento local), D-15 (`sharp` y `exifr`), D-16 (fecha EXIF sin zona
+  horaria), D-17 (pruebas aisladas), D-18 (fin del cierre directo), D-19 (foto reducida en el teléfono), D-22
+  (cámara), D-23 (fecha EXIF futura) y D-24 (duplicado al elegir la categoría).
+- **Aplicada desde el Sprint 2:** D-20 (versiones con etiquetas de git).
+- **Aprobadas para el Sprint 4:** D-08 (coordenadas de confirmación) y D-21 (repositorio público desde la entrega).
+- **Brechas cerradas:** B-01, B-02 (con almacenamiento local; Spaces en el Sprint 4) y B-03.
+- **Cambios en el documento que quedan pendientes:** los indicados en "Impacto en el documento" de cada decisión, en
+  particular el diagrama de secuencia del alta (D-24) y la línea de limitaciones de D-10 y D-19.
+
+### Pantallas para el documento ("Interfaces de Pantallas")
+
+1. Panel ordenado por prioridad, con la banda de cada incidente.
+2. Mapa de calor ponderado por el índice.
+3. Alta: paso de la foto, con el tamaño original y el reducido.
+4. Alta: propuesta de confirmar un incidente existente en el paso 2 (D-24).
+5. Informe de la resolución (vecino).
+6. Bandeja "En revisión" del operador, con la evidencia, quién informó, cuándo y a qué distancia.
+7. Rechazo con observación.
+8. Reclasificación de severidad o categoría.
+9. Desestimación, con el aviso de suspensión al tercer desestimado.
+10. Ingreso de una cuenta suspendida.
+11. Auditoría de un ciclo completo con resolución.
+
+### Pasa al Sprint 4
+
+- Imágenes en la semilla de demostración (resto de la T14).
+- Las tareas de `sprint-4.md`: HU-06, brechas B-04 a B-13 y despliegue.

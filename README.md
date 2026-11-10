@@ -1,29 +1,29 @@
-# SIRU — Sistema Interactivo de Reportes Urbanos (Sprint 2)
+# SIRU — Sistema Interactivo de Reportes Urbanos (Sprint 3)
 
 Plataforma de reportes urbanos geolocalizados para Ramos Mejía, hecha con
 Next.js 14, Leaflet y PostgreSQL con PostGIS.
 
-Esta versión completa el Sprint 2:
+## Novedades del Sprint 3 (versión `v0.3.0`)
 
-- **Base de datos real.** PostgreSQL con PostGIS reemplaza los datos simulados en memoria. Los duplicados y las confirmaciones se validan con `ST_DWithin` y `ST_Distance`, usando un índice espacial GiST.
-- **Registro e inicio de sesión (HU-01).**
-  - Correo verificado.
-  - Política de claves.
-  - Contraseñas guardadas con bcrypt, costo 12.
-- **Sesión y bloqueo (HU-08).**
-  - Bloqueo de 15 minutos después de 3 intentos fallidos. Si una cuenta se bloquea 3 veces en 24 horas, queda bloqueada hasta que el administrador blanquee la clave.
-  - La sesión expira tras 30 minutos sin actividad para el vecino y 15 para el operador, con una duración máxima de 8 horas.
-  - Historial de las últimas 3 claves.
-  - Cambio de clave obligatorio en el primer ingreso del operador.
-- **Auditoría (HU-07).**
-  - Se registran todas las acciones críticas con usuario, incidente, detalle, dirección IP, fecha y hora.
-  - La base de datos rechaza modificar o borrar esos registros.
-- **Permisos por perfil.** El vecino reporta y confirma. El operador registra el cierre y consulta la auditoría.
-- **Ajustes de HU-02.**
-  - Puntaje inicial de 1 punto.
-  - Precisión GPS de 25 m o menos.
-  - Máximo de 5 reportes por día.
-  - Categorías del documento: Bache, Luminaria, Anegamiento, Basura acumulada y Otro.
+- **Priorización (HU-04).**
+  - Índice de prioridad IP = 100 × (0,5 × severidad + 0,3 × respaldo + 0,2 × tiempo), solo para los incidentes activos.
+  - Se recalcula al activarse, con cada confirmación, al cambiar la severidad, al rechazar una resolución y todos los días a las 00:30.
+  - El panel muestra primero los activos, de mayor a menor índice, con su banda (alta, media o baja).
+  - El mapa de calor incluye solo los activos, ponderados por su índice.
+  - El operador puede reclasificar la severidad y la categoría; cada cambio se audita.
+- **Resolución con evidencia (HU-05).**
+  - El vecino, a menos de 50 m y con una foto, informa que el incidente se resolvió: pasa a En revisión.
+  - El operador también puede cargar la información oficial, como foto o como PDF.
+  - En la bandeja "En revisión", el operador ve la evidencia, quién informó, cuándo y a qué distancia, y la valida (Resuelto) o la rechaza con una observación (vuelve a Activo).
+  - El operador desestima los reportes falsos con una observación. Con 3 reportes desestimados en 30 días, la cuenta del autor queda suspendida hasta que el administrador la rehabilite.
+- **Fotos (D-19).**
+  - El teléfono calcula la huella y lee el EXIF del original, y sube una versión reducida (1600 px como máximo).
+  - El servidor la valida, aplica las reglas EXIF del documento (24 h y 50 m) y guarda una foto privada y una miniatura, ambas sin metadatos.
+  - Las imágenes se sirven por una ruta autenticada: la miniatura a cualquier usuario y la foto completa solo al operador.
+- **Alta más simple (D-24).** El duplicado por cercanía se verifica al elegir la categoría, antes de escribir la descripción y sacar la foto.
+- **Pruebas aisladas.** `npm run prueba` corre 125 casos sobre una base aparte.
+
+Lo que hizo cada sprint está en `docs/` (especificación, modelo de datos, registro de decisiones y planificación).
 
 ---
 
@@ -89,6 +89,20 @@ probarlo:
 - **Desde la computadora:** subí temporalmente `NEXT_PUBLIC_PRECISION_GPS_MAXIMA=5000` en `.env` y reiniciá `npm run dev`. Antes de la demo, volvé a `25`.
 - **Desde el celular:** el navegador solo entrega la ubicación en una conexión segura (HTTPS), así que hace falta publicar el sistema con un certificado. Queda para la etapa de validación.
 
+Para probar acciones que exigen estar a menos de 50 m (confirmar o informar la
+resolución), simulá la ubicación en Chrome: F12 → ⋮ → *More tools* → *Sensors*
+→ *Location* → *Other…*, con las coordenadas del incidente.
+
+Para las fotos usá capturas de pantalla de al menos 800 px. Una foto vieja de la
+computadora tiene una fecha EXIF de más de 24 horas y el sistema la rechaza,
+como pide el documento.
+
+### Circuito de resolución (HU-05)
+
+1. Como vecino, abrí un incidente activo en el panel → **Informar que se resolvió** → capturá la ubicación → sacá la foto → **Enviar informe**.
+2. Como operador, filtro **En revisión** → abrí el incidente → **Validar** (pasa a Resuelto) o **Rechazar** con una observación (vuelve a Activo).
+3. En un incidente sin verificar o activo, el operador puede **Reclasificar**, **Desestimar** con una observación o cargar la **Información oficial**.
+
 ## 5. Tareas del administrador técnico
 
 ```powershell
@@ -117,9 +131,11 @@ efectos adicionales.
 
 ## 6. Pruebas funcionales
 
-`pruebas/api.prueba.ts` recorre 42 casos de las historias del Sprint 2:
-registro, verificación, bloqueo, inactividad, duplicados, confirmaciones,
-permisos y auditoría.
+`pruebas/api.prueba.ts` recorre 125 casos: los 42 del Sprint 2 (registro,
+verificación, bloqueo, inactividad, duplicados, confirmaciones, permisos y
+auditoría) y 83 del Sprint 3 (fotos y reglas EXIF, almacenamiento, índice de
+prioridad, reclasificación, resolución, desestimación y suspensión). El detalle
+está en la sección "Cierre" de `docs/sprint-3.md`.
 
 Las pruebas crean y modifican datos, así que corren sobre una base aparte,
 `siru_prueba`, y nunca sobre `siru`:
@@ -141,17 +157,19 @@ El comando:
 Si la base de destino no se llama `siru_prueba`, el comando se niega a correr.
 Termina con código 1 si falla alguna prueba.
 
-## 7. Control de versiones (recomendado)
+## 7. Versiones
 
-Git ya está instalado en tu computadora. Para empezar a versionar esta carpeta:
+El código se versiona con git y cada hito se marca con una etiqueta
+(versionado semántico, D-20):
 
-```powershell
-git init
-git add .
-git commit -m "Sprint 2: PostgreSQL con PostGIS, autenticación, sesión y auditoría"
-```
+| Etiqueta | Hito |
+|---|---|
+| `v0.1.0` | Sprint 1: mapa, alta y confirmación con persistencia simulada |
+| `v0.2.0` | Sprint 2: PostgreSQL con PostGIS, autenticación, sesión y auditoría |
+| `v0.3.0` | Sprint 3: priorización y cierre con evidencia |
 
-El archivo `.env` queda fuera del repositorio porque está en `.gitignore`.
+El archivo `.env` y las fotos de `almacenamiento/` quedan fuera del
+repositorio (están en `.gitignore`).
 
 ## Estructura
 
@@ -159,15 +177,19 @@ El archivo `.env` queda fuera del repositorio porque está en `.gitignore`.
 |---|---|
 | `db/migraciones/` | Esquema SQL: tablas del DER, índices GiST y disparador de la auditoría |
 | `scripts/` | Migración, datos de demostración y tareas del administrador |
-| `src/lib/servidor/` | Acceso a la base, sesión, contraseñas, auditoría e incidentes (solo servidor) |
+| `src/lib/servidor/` | Acceso a la base, sesión, contraseñas, auditoría, incidentes, prioridad, resoluciones, imágenes y almacenamiento (solo servidor) |
 | `src/lib/reglas.ts` | Parámetros de las reglas del documento (50 m, 3 puntos, 25 m, límites, tiempos) |
 | `src/app/api/` | Rutas de la API |
-| `src/app/ingresar`, `registro`, `cambiar-clave`, `auditoria` | Pantallas nuevas |
+| `src/app/ingresar`, `registro`, `cambiar-clave`, `auditoria` | Pantallas de acceso y de auditoría |
+| `src/components/` | Mapa, formulario de alta, informe de la resolución y panel con la bandeja del operador |
+| `almacenamiento/` | Fotos y documentos en desarrollo (fuera de git; en producción, Spaces) |
 | `pruebas/` | Pruebas funcionales de la API |
 
-## Pendiente para el Sprint 3
+## Pendiente para el Sprint 4
 
-- HU-04: índice de prioridad y mapa de calor ponderado.
-- HU-05: el vecino informa la resolución con evidencia fotográfica y el operador la valida o la rechaza. Desestimar reportes.
-- Guardar la imagen del reporte (hoy se valida y se guarda su huella SHA-256).
-- Envío real del correo de verificación por SMTP.
+- HU-06: informe de zonas críticas en PDF.
+- Despliegue con Docker, HTTPS y almacenamiento en Spaces.
+- Envío real del correo de verificación por SMTP y restablecimiento de la contraseña por correo.
+- Coordenadas de quienes confirman por 90 días (D-08), antigüedad de la posición y velocidad entre acciones.
+- Imágenes en la semilla de demostración.
+- El resto de las brechas de `docs/decisiones.md` (B-04 a B-13).

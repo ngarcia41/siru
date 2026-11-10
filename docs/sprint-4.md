@@ -5,6 +5,8 @@
 - **Si no alcanza el tiempo:** el plan del riesgo R05 permite postergar HU-06. Por eso el orden recomendado es
   despliegue y brechas que afectan a la validación (B-07, B-09, B-04 y B-05) → validación con vecinos → HU-06 → resto de las brechas.
 - Antes de empezar, las tareas de este sprint se detallan con el mismo formato que `sprint-3.md`.
+- **Pendiente del Sprint 3:** imágenes en la semilla de demostración (resto de la T14), para que los incidentes de
+  la demo tengan miniatura y foto.
 
 ## HU-06: Informe de zonas críticas (Media, 5 puntos, depende de HU-04)
 

@@ -88,7 +88,7 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
     de la sociedad de fomento. La acción se audita.
 - Alternativa descartada: una suspensión de duración fija, por ejemplo 30 días, porque necesitaría guardar una fecha
   de fin de la suspensión, y el DER no tiene ese campo. La rehabilitación por el administrador no cambia la base.
-- Detalle de la implementación (T11, a confirmar por Nicolás): después de una rehabilitación se cuentan solo los
+- Detalle de la implementación (T11, aprobado por Nicolás el 09/11/2026): después de una rehabilitación se cuentan solo los
   desestimados posteriores a ella, igual que el conteo de bloqueos se reinicia después de un blanqueo. Si no, los
   desestimados viejos que siguen dentro de los 30 días volverían a suspender la cuenta con el siguiente.
 - El mensaje de suspensión se informa solo con la contraseña correcta, para no revelar el estado de una cuenta.
