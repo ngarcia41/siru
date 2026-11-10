@@ -16,7 +16,7 @@ import { auditar } from "./auditoria";
 import { almacenamiento, claveDocumento, claveFoto, claveMiniatura } from "./almacenamiento";
 import { validarExif, type ExifDeclarado } from "./imagen";
 import { obtenerIncidente, punto, rechazo, validarPrecision, type Resultado } from "./incidentes";
-import { OBSERVACION, RADIO_METROS } from "../reglas";
+import { DESESTIMADOS_PARA_SUSPENSION, DIAS_VENTANA_SUSPENSION, OBSERVACION, RADIO_METROS } from "../reglas";
 import { recalcularIndices } from "./prioridad";
 import type { Incident } from "../types";
 
@@ -205,5 +205,77 @@ export async function validarResolucion(
       }, c);
     }
     return { ok: true, datos: (await obtenerIncidente(incidenteId, c))! };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Desestimación y suspensión (HU-05 criterio 4, D-09, D-12)
+// ---------------------------------------------------------------------------
+
+/**
+ * D-09 (plan de R02): con 3 reportes desestimados en 30 días la cuenta del
+ * autor pasa a SUSPENDIDA y se cierran sus sesiones. Se cuentan solo los
+ * desestimados posteriores a la última rehabilitación, para que una cuenta
+ * recién rehabilitada no vuelva a suspenderse por los mismos reportes.
+ * Devuelve true si suspendió la cuenta.
+ */
+async function controlarSuspension(c: PoolClient, autorId: number, incidenteId: number, operadorId: number, ip: string | null) {
+  const { estado } = (await c.query(
+    "SELECT estado_cuenta AS estado FROM usuario WHERE usuario_id = $1 FOR UPDATE", [autorId]
+  )).rows[0];
+  const { n } = (await c.query(
+    `SELECT count(*)::int AS n FROM incidente
+      WHERE usuario_id = $1 AND estado = 'DESESTIMADO'
+        AND fecha_cierre > now() - make_interval(days => $2)
+        AND fecha_cierre > COALESCE((SELECT max(fecha_hora) FROM auditoria
+                                      WHERE usuario_id = $1 AND accion = 'REHABILITA_CUENTA'), '-infinity')`,
+    [autorId, DIAS_VENTANA_SUSPENSION]
+  )).rows[0];
+  if (n < DESESTIMADOS_PARA_SUSPENSION || estado === "SUSPENDIDA") return false;
+
+  await c.query("UPDATE usuario SET estado_cuenta = 'SUSPENDIDA' WHERE usuario_id = $1", [autorId]);
+  await c.query("UPDATE sesion SET revocada_en = now() WHERE usuario_id = $1 AND revocada_en IS NULL", [autorId]);
+  // La acción la provoca el operador; el registro queda a nombre de la cuenta suspendida, con el operador en el detalle.
+  await auditar("SUSPENDE_CUENTA", {
+    usuarioId: autorId, incidenteId, ip,
+    detalle: { estadoAnterior: estado, desestimadosEn30Dias: n, operadorId },
+  }, c);
+  return true;
+}
+
+/**
+ * HU-05 criterio 4: el operador desestima un reporte falso, inexistente o
+ * ajeno al alcance, con observación obligatoria. Solo desde SIN_VERIFICAR o
+ * ACTIVO (D-12): uno EN_REVISION primero se valida o se rechaza.
+ */
+export async function desestimarIncidente(
+  operadorId: number,
+  incidenteId: number,
+  observacion: unknown,
+  ip: string | null
+): Promise<Resultado<{ incidente: Incident; cuentaSuspendida: boolean }>> {
+  const obs = leerObservacion(observacion, true);
+  if (!obs.ok) return obs;
+
+  return transaccion(async (c) => {
+    const inc = (await c.query("SELECT estado, usuario_id FROM incidente WHERE incidente_id = $1 FOR UPDATE", [incidenteId])).rows[0];
+    if (!inc) return rechazo(404, "NO_ENCONTRADO", "Incidente no encontrado.");
+    if (!["SIN_VERIFICAR", "ACTIVO"].includes(inc.estado)) {
+      return rechazo(409, "ESTADO_NO_DESESTIMABLE",
+        inc.estado === "EN_REVISION"
+          ? "El incidente está en revisión: primero validá o rechazá la resolución informada."
+          : "Solo se pueden desestimar incidentes sin verificar o activos.");
+    }
+
+    await c.query(
+      "UPDATE incidente SET estado = 'DESESTIMADO', fecha_cierre = now(), indice_prioridad = NULL WHERE incidente_id = $1",
+      [incidenteId]
+    );
+    await auditar("DESESTIMA_INCIDENTE", {
+      usuarioId: operadorId, incidenteId, ip,
+      detalle: { estadoAnterior: inc.estado, estadoNuevo: "DESESTIMADO", observacion: obs.datos, autorId: inc.usuario_id },
+    }, c);
+    const cuentaSuspendida = await controlarSuspension(c, inc.usuario_id, incidenteId, operadorId, ip);
+    return { ok: true, datos: { incidente: (await obtenerIncidente(incidenteId, c))!, cuentaSuspendida } };
   });
 }

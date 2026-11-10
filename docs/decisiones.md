@@ -77,7 +77,7 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
   podría comparar entre altas de incidentes.
 - Descartado: guardarlas en AUDITORIA, porque es inmutable y no permitiría borrarlas a los 90 días.
 
-### D-09 · Suspensión por reportes desestimados (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
+### D-09 · Suspensión por reportes desestimados (Interpretación · Implementada el 09/11/2026 en la T11 · Sprint 3)
 - Documento: el plan de R02 suspende las cuentas con 3 reportes desestimados en 30 días, y EstadoCuenta incluye
   SUSPENDIDA. No dice cuánto dura la suspensión ni cómo termina.
 - Decisión:
@@ -88,6 +88,10 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
     de la sociedad de fomento. La acción se audita.
 - Alternativa descartada: una suspensión de duración fija, por ejemplo 30 días, porque necesitaría guardar una fecha
   de fin de la suspensión, y el DER no tiene ese campo. La rehabilitación por el administrador no cambia la base.
+- Detalle de la implementación (T11, a confirmar por Nicolás): después de una rehabilitación se cuentan solo los
+  desestimados posteriores a ella, igual que el conteo de bloqueos se reinicia después de un blanqueo. Si no, los
+  desestimados viejos que siguen dentro de los 30 días volverían a suspender la cuenta con el siguiente.
+- El mensaje de suspensión se informa solo con la contraseña correcta, para no revelar el estado de una cuenta.
 - Impacto en el documento: una oración en "Controles sobre la ubicación, la frecuencia y el uso".
 
 ### D-10 · Quién informa y quién valida la resolución (Interpretación · Implementada el 09/11/2026 en la T09 · Sprint 3)
@@ -104,7 +108,7 @@ La evidencia no puede repetir el hash de ninguna imagen ya registrada, ni de un 
 Esto aplica la regla del documento de "rechazar la carga de un archivo idéntico a otro ya registrado" e impide usar la
 foto original del problema como prueba de que se arregló.
 
-### D-12 · Desde qué estados se desestima (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
+### D-12 · Desde qué estados se desestima (Interpretación · Implementada el 09/11/2026 en la T11 · Sprint 3)
 Se puede desestimar un incidente en SIN_VERIFICAR o ACTIVO. Uno EN_REVISION primero se valida o se rechaza.
 La observación es obligatoria y se guarda en el detalle de la auditoría. `fecha_cierre` se completa también al desestimar.
 

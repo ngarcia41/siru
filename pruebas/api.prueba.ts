@@ -591,6 +591,58 @@ async function main() {
   const bordes = [70, 69.99, 40, 39.99].map((ip) => bandaDe(ip)).join(", ");
   caso("Los bordes de las bandas: 70 → alta, 69,99 → media, 40 → media, 39,99 → baja", bordes === "alta, media, media, baja", bordes);
 
+  // --- HU-05 criterio 4: desestimar (T11, D-12) y suspensión por 3 desestimados en 30 días (D-09) ---
+  // La sesión anterior del operador venció en la prueba de inactividad: vuelve a ingresar.
+  const op2 = await ingresar("operador@siru.local", "Gestion#Barrio27");
+  const desestimar = (s: Sesion, id: unknown, observacion?: string) =>
+    llamar(s, "POST", `/api/incidents/${id}/desestimar`, observacion === undefined ? {} : { observacion });
+  const reportesV4 = (await db.query(
+    "SELECT incidente_id FROM incidente WHERE usuario_id = (SELECT usuario_id FROM usuario WHERE email = 'vecino4@siru.local') AND estado = 'SIN_VERIFICAR' ORDER BY incidente_id"
+  )).rows.map((x) => x.incidente_id);
+  r = await desestimar(v4, reportesV4[0], "Reporte de prueba fuera del alcance.");
+  caso("Un vecino no puede desestimar (403)", r.status === 403, `HTTP ${r.status}`);
+  r = await desestimar(op2, reportesV4[0]);
+  caso("Desestimar sin observación se rechaza (400)", r.status === 400 && r.data?.error === "OBSERVACION_OBLIGATORIA", r.data?.message);
+  // Un incidente en revisión primero se valida o se rechaza (D-12): el 6 de la semilla, con información oficial.
+  await informar(op2, 6, { hash: hashFoto("oficial-6") });
+  r = await desestimar(op2, 6, "Se informó como resuelto, pero es un reporte repetido.");
+  caso("Un incidente en revisión no se desestima (409, D-12)", r.status === 409 && r.data?.error === "ESTADO_NO_DESESTIMABLE", r.data?.message);
+  r = await desestimar(op2, reportesV4[0], "La foto no corresponde a la ubicación informada.");
+  const des1 = (await db.query("SELECT estado, fecha_cierre, indice_prioridad FROM incidente WHERE incidente_id = $1", [reportesV4[0]])).rows[0];
+  const audDes = await ultimaAuditoria(reportesV4[0], "DESESTIMA_INCIDENTE");
+  caso("El operador desestima con observación: DESESTIMADO, con fecha_cierre, sin índice y auditado",
+    r.status === 200 && des1?.estado === "DESESTIMADO" && !!des1?.fecha_cierre && des1?.indice_prioridad === null
+      && audDes?.detalle?.observacion?.startsWith("La foto no corresponde") && r.data?.cuentaSuspendida === false,
+    JSON.stringify({ estado: des1?.estado, observacion: audDes?.detalle?.observacion }));
+  r = await llamar(v4, "GET", "/api/incidents");
+  caso("Un incidente desestimado no aparece en el mapa ni en el panel",
+    r.status === 200 && !(r.data?.data ?? []).some((x: { id: string }) => x.id === String(reportesV4[0])), "");
+  r = await desestimar(op2, reportesV4[1], "Reporte duplicado de otro ya existente.");
+  const estadoV4 = async () => (await db.query("SELECT estado_cuenta FROM usuario WHERE email = 'vecino4@siru.local'")).rows[0].estado_cuenta;
+  caso("Con 2 desestimados la cuenta sigue activa", r.status === 200 && (await estadoV4()) === "ACTIVA", await estadoV4());
+  r = await desestimar(op2, reportesV4[2], "No se encontró el incidente en el lugar.");
+  const suspendida = await estadoV4();
+  const sesionV4 = await llamar(v4, "GET", "/api/auth/sesion");
+  caso("Al tercer desestimado en 30 días la cuenta queda SUSPENDIDA y sus sesiones se cierran",
+    r.status === 200 && r.data?.cuentaSuspendida === true && suspendida === "SUSPENDIDA" && sesionV4.status === 401,
+    `${suspendida} · sesión ${sesionV4.status}`);
+  caso("Se audita SUSPENDE_CUENTA", !!(await ultimaAuditoria(reportesV4[2], "SUSPENDE_CUENTA")), "");
+  r = await llamar(null, "POST", "/api/auth/ingresar", { email: "vecino4@siru.local", clave: "Equivocada#1" });
+  const conClave = await llamar(null, "POST", "/api/auth/ingresar", { email: "vecino4@siru.local", clave: CLAVE_VECINOS });
+  caso("La cuenta suspendida recibe CUENTA_SUSPENDIDA solo con la contraseña correcta",
+    r.status === 401 && conClave.status === 403 && conClave.data?.error === "CUENTA_SUSPENDIDA", `${r.status}, ${conClave.status} ${conClave.data?.error}`);
+  const rehab = spawnSync(process.execPath, [join("node_modules", "tsx", "dist", "cli.mjs"), "scripts/rehabilitar-cuenta.ts", "vecino4@siru.local"],
+    { env: process.env, encoding: "utf8" });
+  r = await llamar(null, "POST", "/api/auth/ingresar", { email: "vecino4@siru.local", clave: CLAVE_VECINOS });
+  const audRehab = (await db.query(
+    "SELECT 1 FROM auditoria WHERE accion = 'REHABILITA_CUENTA' AND usuario_id = (SELECT usuario_id FROM usuario WHERE email = 'vecino4@siru.local')"
+  )).rowCount;
+  caso("El administrador rehabilita la cuenta (admin:rehabilitar-cuenta): vuelve a ingresar y queda auditado",
+    rehab.status === 0 && r.status === 200 && (await estadoV4()) === "ACTIVA" && audRehab === 1, (rehab.stdout + rehab.stderr).trim());
+  r = await desestimar(op2, reportesV4[3], "Reporte que no corresponde a la vía pública.");
+  caso("Después de rehabilitarla, los desestimados anteriores ya no cuentan para suspenderla",
+    r.status === 200 && r.data?.cuentaSuspendida === false && (await estadoV4()) === "ACTIVA", await estadoV4());
+
   await db.end();
   const fallas = resultados.filter((x) => !x.ok).length;
   console.log(`\n${resultados.length - fallas} de ${resultados.length} casos pasaron.`);

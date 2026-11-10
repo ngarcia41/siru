@@ -94,6 +94,7 @@ probarlo:
 ```powershell
 npm run admin:crear-operador -- referente@fomento.org   # crea un operador con clave temporal
 npm run admin:blanquear-clave -- vecino@correo.com      # blanquea una clave y desbloquea la cuenta
+npm run admin:rehabilitar-cuenta -- vecino@correo.com   # levanta la suspensión por 3 reportes desestimados (D-09)
 ```
 
 Cada script muestra la clave temporal una sola vez. Entregala por un canal

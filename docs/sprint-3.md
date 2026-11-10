@@ -45,7 +45,7 @@ para que el cierre quede registrado de forma confiable.
 | HU-04 | T08 | Panel ordenado por índice con su banda; mapa de calor de los activos ponderado por el índice | Alta | 1 día | Hecha (09/11/2026) |
 | HU-05 | T09 | Informe de la resolución por el vecino (a menos de 50 m, con foto) y por el operador (información oficial) (D-10, D-11) | Alta | 1,5 días | Hecha (09/11/2026) |
 | HU-05 | T10 | Validar o rechazar la resolución (observación obligatoria al rechazar) (D-18) | Alta | 1 día | Hecha (09/11/2026) |
-| HU-05 | T11 | Desestimar con observación obligatoria y suspender tras 3 desestimados en 30 días (D-09, D-12) | Alta | 1 día | Pendiente |
+| HU-05 | T11 | Desestimar con observación obligatoria y suspender tras 3 desestimados en 30 días (D-09, D-12) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-05 | T12 | Pantallas: informar la resolución (vecino) y bandeja del operador con la evidencia y las acciones | Alta | 1,5 días | Pendiente |
 | Técnica | T13 | Pruebas de HU-04 y HU-05, y adecuación de las 42 pruebas anteriores | Alta | 1 día | Pendiente |
 | Técnica | T14 | Semilla con imágenes e índices, README y cierre del sprint | Media | 0,5 día | Pendiente |

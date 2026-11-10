@@ -12,7 +12,8 @@
     "prueba": "tsx scripts/prueba.ts",
     "tareas:diarias": "tsx scripts/tareas-diarias.ts",
     "admin:crear-operador": "tsx scripts/crear-operador.ts",
-    "admin:blanquear-clave": "tsx scripts/blanquear-clave.ts"
+    "admin:blanquear-clave": "tsx scripts/blanquear-clave.ts",
+    "admin:rehabilitar-cuenta": "tsx scripts/rehabilitar-cuenta.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

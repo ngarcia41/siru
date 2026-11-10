@@ -5,6 +5,7 @@
  * - 3 intentos fallidos consecutivos → bloqueo de 15 minutos.
  * - 3 bloqueos en 24 horas → cuenta BLOQUEADA hasta que se blanquee la clave.
  * - Contraseña vencida (90 días operador, 180 vecino) → cambio obligatorio.
+ * - Cuenta SUSPENDIDA por 3 desestimados en 30 días → CUENTA_SUSPENDIDA (D-09).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/servidor/db";
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     await compararFicticio(clave);
     return GENERICO();
   }
-  if (u.estado_cuenta === "BLOQUEADA" || u.estado_cuenta === "SUSPENDIDA") {
+  if (u.estado_cuenta === "BLOQUEADA") {
     return error(423, "CUENTA_BLOQUEADA", "La cuenta está bloqueada. Pedí el blanqueo de la contraseña al administrador del sistema.");
   }
   if (u.min_bloqueo !== null && Number(u.min_bloqueo) > 0) {
@@ -75,6 +76,12 @@ export async function POST(req: NextRequest) {
     return error(423, "BLOQUEO_TEMPORAL", `Tercer intento fallido: la cuenta quedó bloqueada durante ${MINUTOS_DE_BLOQUEO} minutos.`);
   }
 
+  // D-09: la suspensión tiene su propio mensaje. Se informa recién con la contraseña correcta,
+  // así el estado de una cuenta no queda a la vista de quien no conoce su clave.
+  if (u.estado_cuenta === "SUSPENDIDA") {
+    return error(403, "CUENTA_SUSPENDIDA",
+      "Tu cuenta está suspendida porque tres de tus reportes fueron desestimados en 30 días. Para rehabilitarla, comunicate con la sociedad de fomento.");
+  }
   if (u.estado_cuenta === "PENDIENTE") {
     return error(403, "CORREO_SIN_VERIFICAR", "Antes de ingresar, verificá tu correo con el enlace que te enviamos.");
   }
