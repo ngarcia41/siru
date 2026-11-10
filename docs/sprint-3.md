@@ -202,8 +202,9 @@ Las 42 pruebas del Sprint 2 siguen pasando. Las que enviaban JSON al alta se ada
 
 ## Cierre
 
-- **Fechas reales:** del 09/11/2026 al 09/11/2026. El Gantt del documento lo planificaba del 19/10 al 01/11; el
-  desvío corresponde al riesgo R05 (ver el encabezado de este archivo).
+- **Fechas reales:** del 19/10/2026 al 09/11/2026. El Gantt del documento lo planificaba del 19/10 al 01/11; el
+  desvío de 8 días en el cierre corresponde al riesgo R05, cuyo plan prioriza las historias del núcleo y permite
+  postergar HU-06 (ver el encabezado de este archivo).
 - **Etiqueta:** `v0.3.0` (D-20). Copia del hito: `siru-v0.3.0.zip`.
 
 ### Sprint Backlog final (formato del documento)
