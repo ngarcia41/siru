@@ -316,10 +316,12 @@ export default function MapView({
 
     if (!showHeatmap) return;
 
-    // Puntos del heatmap: solo incidentes activos
+    // Puntos del mapa de calor: solo incidentes activos, ponderados por su índice
     const heatPoints = incidents
       .filter((i) => i.status === "active")
-      .map((i) => [i.geom.lat, i.geom.lng, i.trustPoints / 5] as [number, number, number]);
+      .filter((i) => i.indicePrioridad !== null)
+      // HU-04 criterio 3: cada incidente activo pesa según su índice de prioridad (0 a 1).
+      .map((i) => [i.geom.lat, i.geom.lng, (i.indicePrioridad as number) / 100] as [number, number, number]);
 
     if (heatPoints.length === 0) return;
 

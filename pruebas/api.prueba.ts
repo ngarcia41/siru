@@ -16,7 +16,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { Client } from "pg";
 import sharp from "sharp";
-import { recalcularIndices } from "../src/lib/servidor/prioridad";
+import { bandaDe, recalcularIndices } from "../src/lib/servidor/prioridad";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
 const CLAVE_VECINOS = "Ramos#Mejia26";
@@ -467,6 +467,28 @@ async function main() {
        FROM incidente`
   )).rows[0];
   caso("Solo los ACTIVO tienen índice; los demás quedan en NULL", fuera === 0 && activosSin === 0, `fuera de ACTIVO con índice: ${fuera}, activos sin índice: ${activosSin}`);
+
+  // --- HU-04 criterio 2: panel ordenado por índice con su banda (T08) ---
+  const sesionPanel = await ingresar("vecino2@siru.local", CLAVE_VECINOS);
+  r = await llamar(sesionPanel, "GET", "/api/incidents");
+  type Fila = { id: string; status: string; indicePrioridad: number | null; bandaPrioridad: string | null; createdAt: string };
+  const lista: Fila[] = r.data?.data ?? [];
+  const activos = lista.filter((x) => x.status === "active");
+  const primeroNoActivo = lista.findIndex((x) => x.status !== "active");
+  const activosPrimero = primeroNoActivo === -1 || lista.slice(primeroNoActivo).every((x) => x.status !== "active");
+  const ordenIP = activos.every((x, i) => i === 0 || (activos[i - 1].indicePrioridad ?? 0) >= (x.indicePrioridad ?? 0));
+  const resto = lista.slice(activos.length);
+  const ordenFecha = resto.every((x, i) => i === 0 || resto[i - 1].createdAt >= x.createdAt);
+  caso("GET /api/incidents devuelve primero los activos por índice de mayor a menor y después los demás por fecha",
+    r.status === 200 && activos.length >= 3 && activosPrimero && ordenIP && ordenFecha,
+    activos.map((x) => x.indicePrioridad).join(" ≥ "));
+  const bandaEsperada = (ip: number) => (ip >= 70 ? "alta" : ip >= 40 ? "media" : "baja");
+  caso("Cada activo informa su banda según el documento (alta ≥ 70, media ≥ 40, baja < 40) y los demás no tienen",
+    activos.every((x) => x.indicePrioridad !== null && x.bandaPrioridad === bandaEsperada(x.indicePrioridad))
+      && resto.every((x) => x.indicePrioridad === null && x.bandaPrioridad === null),
+    activos.map((x) => `${x.indicePrioridad}:${x.bandaPrioridad}`).join(", "));
+  const bordes = [70, 69.99, 40, 39.99].map((ip) => bandaDe(ip)).join(", ");
+  caso("Los bordes de las bandas: 70 → alta, 69,99 → media, 40 → media, 39,99 → baja", bordes === "alta, media, media, baja", bordes);
 
   await db.end();
   const fallas = resultados.filter((x) => !x.ok).length;

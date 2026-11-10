@@ -278,6 +278,15 @@
   font-weight: 600;
 }
 
+/* Banda del índice de prioridad (HU-04) */
+.incidentPrioridad {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
 .incidentTrust {
   font-size: 0.72rem;
   color: var(--color-text-muted);

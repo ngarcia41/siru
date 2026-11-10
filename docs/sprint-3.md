@@ -42,7 +42,7 @@ para que el cierre quede registrado de forma confiable.
 | HU-04 | T05 | Calcular el índice de prioridad al activar y con cada confirmación (D-06) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-04 | T06 | Tarea diaria de las 00:30 que recalcula los índices (D-07) | Alta | 0,5 día | Hecha (09/11/2026) |
 | HU-04 | T07 | Reclasificar la severidad y la categoría (operador), con recálculo y auditoría (D-13) (API; los botones van en la T12) | Alta | 1 día | Hecha (09/11/2026) |
-| HU-04 | T08 | Panel ordenado por índice con su banda; mapa de calor de los activos ponderado por el índice | Alta | 1 día | Pendiente |
+| HU-04 | T08 | Panel ordenado por índice con su banda; mapa de calor de los activos ponderado por el índice | Alta | 1 día | Hecha (09/11/2026) |
 | HU-05 | T09 | Informe de la resolución por el vecino (a menos de 50 m, con foto) y por el operador (información oficial) (D-10, D-11) | Alta | 1,5 días | Pendiente |
 | HU-05 | T10 | Validar o rechazar la resolución (observación obligatoria al rechazar) (D-18) | Alta | 1 día | Pendiente |
 | HU-05 | T11 | Desestimar con observación obligatoria y suspender tras 3 desestimados en 30 días (D-09, D-12) | Alta | 1 día | Pendiente |

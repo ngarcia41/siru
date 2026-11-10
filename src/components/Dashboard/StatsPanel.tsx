@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import type { Incident, IncidentStatus, SesionCliente } from "@/lib/types";
+import type { BandaPrioridad, Incident, IncidentStatus, SesionCliente } from "@/lib/types";
 import styles from "./StatsPanel.module.css";
 
 interface StatsPanelProps {
@@ -36,6 +36,29 @@ const CATEGORY_ICONS: Record<string, string> = {
   Anegamiento: "💧",
   "Basura acumulada": "🗑",
   Otro: "⚠",
+};
+
+/**
+ * HU-04 criterio 2: primero los activos, por índice de prioridad de mayor a
+ * menor; después los demás, del más nuevo al más viejo. Es el mismo orden que
+ * devuelve la API; se repite acá porque la lista también cambia en la pantalla
+ * (por ejemplo, al sumar un reporte nuevo).
+ */
+function ordenPorPrioridad(a: Incident, b: Incident): number {
+  const activoA = a.status === "active" ? 1 : 0;
+  const activoB = b.status === "active" ? 1 : 0;
+  if (activoA !== activoB) return activoB - activoA;
+  const ipA = a.indicePrioridad ?? -1;
+  const ipB = b.indicePrioridad ?? -1;
+  if (ipA !== ipB) return ipB - ipA;
+  return b.createdAt.localeCompare(a.createdAt);
+}
+
+/** Banda del índice (la calcula el servidor con los umbrales del documento). */
+const BANDA: Record<BandaPrioridad, { etiqueta: string; color: string }> = {
+  alta: { etiqueta: "Prioridad alta", color: "#ef4444" },
+  media: { etiqueta: "Prioridad media", color: "#f97316" },
+  baja: { etiqueta: "Prioridad baja", color: "#eab308" },
 };
 
 const STATUS_LABEL: Record<IncidentStatus, string> = {
@@ -84,10 +107,7 @@ export default function StatsPanel({
 
   // Lista filtrada
   const filtered = useMemo(
-    () =>
-      filter === "all"
-        ? incidents
-        : incidents.filter((i) => i.status === filter),
+    () => (filter === "all" ? [...incidents] : incidents.filter((i) => i.status === filter)).sort(ordenPorPrioridad),
     [incidents, filter]
   );
 
@@ -360,6 +380,15 @@ function IncidentCard({
         <span className={styles.incidentSeverity} style={{ color: severityColor }}>
           ● {incident.severity === "high" ? "Alto" : incident.severity === "medium" ? "Medio" : "Bajo"}
         </span>
+        {incident.bandaPrioridad && incident.indicePrioridad !== null && (
+          <span
+            className={styles.incidentPrioridad}
+            style={{ color: BANDA[incident.bandaPrioridad].color, background: `${BANDA[incident.bandaPrioridad].color}18` }}
+            title="Índice de prioridad (0 a 100)"
+          >
+            {BANDA[incident.bandaPrioridad].etiqueta} · {Math.round(incident.indicePrioridad)}
+          </span>
+        )}
         <span className={styles.incidentTrust}>★ {incident.trustPoints} pts</span>
       </div>
 

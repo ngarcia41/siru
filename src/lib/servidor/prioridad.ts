@@ -19,6 +19,7 @@
  */
 import type { ClientBase } from "pg";
 import { BANDAS_PRIORIDAD, DIAS_ANTIGUEDAD_MAXIMA, PESOS_PRIORIDAD, PUNTOS_RESPALDO_MAXIMO } from "../reglas";
+import type { BandaPrioridad } from "../types";
 
 /** Cualquier conexión de node-postgres (un cliente de la transacción o un Client suelto). */
 type Conexion = Pick<ClientBase, "query">;
@@ -56,8 +57,6 @@ export async function recalcularIndices(c: Conexion, opciones: { incidenteId?: n
   }
   return rows.map((f) => ({ incidenteId: Number(f.incidente_id), indice: Number(f.indice_prioridad) }));
 }
-
-export type BandaPrioridad = "alta" | "media" | "baja";
 
 /** Banda del índice: alta si IP ≥ 70; media si 40 ≤ IP < 70; baja si IP < 40. */
 export function bandaDe(indice: number | null): BandaPrioridad | null {

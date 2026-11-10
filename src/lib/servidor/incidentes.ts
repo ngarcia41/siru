@@ -12,7 +12,7 @@ import { consulta, transaccion } from "./db";
 import { auditar } from "./auditoria";
 import { validarExif, type ExifDeclarado } from "./imagen";
 import { almacenamiento, claveFoto, claveMiniatura, miniaturaDe } from "./almacenamiento";
-import { recalcularIndices } from "./prioridad";
+import { bandaDe, recalcularIndices } from "./prioridad";
 import type { Incident, IncidentCategory, IncidentSeverity, IncidentStatus, MotivoNoConfirmable } from "../types";
 import {
   CATEGORIAS, LIMITE_CONFIRMACIONES_24H, LIMITE_REPORTES_24H, PRECISION_GPS_MAXIMA, RADIO_METROS, UMBRAL_ACTIVACION,
@@ -34,7 +34,7 @@ function punto(lngParam: number, latParam: number) {
 const SELECT_INCIDENTE = `
   SELECT i.incidente_id, i.usuario_id, c.nombre AS categoria, s.nombre AS severidad, i.descripcion,
          ST_Y(i.ubicacion) AS lat, ST_X(i.ubicacion) AS lng, i.precision_gps, i.hash_foto, i.foto_ruta,
-         i.puntaje_confianza, i.estado, i.fecha_creacion, i.fecha_cierre,
+         i.puntaje_confianza, i.indice_prioridad, i.estado, i.fecha_creacion, i.fecha_cierre,
          COALESCE((SELECT array_agg(cf.usuario_id ORDER BY cf.fecha_confirmacion)
                      FROM confirmacion cf WHERE cf.incidente_id = i.incidente_id), '{}') AS confirmadores
     FROM incidente i
@@ -55,6 +55,8 @@ export function aDto(f: any): Incident {
     exifData: null,
     gpsAccuracy: f.precision_gps === null ? null : Number(f.precision_gps),
     trustPoints: Number(f.puntaje_confianza),
+    indicePrioridad: f.indice_prioridad === null ? null : Number(f.indice_prioridad),
+    bandaPrioridad: bandaDe(f.indice_prioridad === null ? null : Number(f.indice_prioridad)),
     status: ESTADO_A_UI[f.estado],
     severity: SEVERIDAD_A_UI[f.severidad],
     createdBy: String(f.usuario_id),
@@ -64,8 +66,16 @@ export function aDto(f: any): Incident {
   };
 }
 
+/**
+ * Incidentes no desestimados. HU-04 criterio 2: primero los activos, ordenados
+ * por índice de prioridad de mayor a menor; después los demás, del más nuevo al
+ * más viejo. A igual índice decide la fecha.
+ */
 export async function listarIncidentes(): Promise<Incident[]> {
-  const filas = await consulta(`${SELECT_INCIDENTE} WHERE i.estado <> 'DESESTIMADO' ORDER BY i.fecha_creacion DESC`);
+  const filas = await consulta(
+    `${SELECT_INCIDENTE} WHERE i.estado <> 'DESESTIMADO'
+      ORDER BY (i.estado = 'ACTIVO') DESC, i.indice_prioridad DESC NULLS LAST, i.fecha_creacion DESC`
+  );
   return filas.map(aDto);
 }
 

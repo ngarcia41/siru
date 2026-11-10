@@ -26,6 +26,9 @@ export type IncidentCategory = "Bache" | "Luminaria" | "Anegamiento" | "Basura a
  */
 export type IncidentStatus = "unverified" | "active" | "review" | "resolved" | "dismissed";
 
+/** Banda del índice de prioridad (HU-04). */
+export type BandaPrioridad = "alta" | "media" | "baja";
+
 /** Severidad (tabla SEVERIDAD): baja, media o alta. */
 export type IncidentSeverity = "low" | "medium" | "high";
 
@@ -42,6 +45,10 @@ export interface Incident {
   exifData: ExifMetadata | null;
   gpsAccuracy: number | null;
   trustPoints: number;
+  /** Índice de prioridad de 0 a 100 (HU-04). Solo los incidentes activos lo tienen; los demás, null. */
+  indicePrioridad: number | null;
+  /** Banda del índice: alta (≥ 70), media (40 a 69,99) o baja (< 40); null fuera de ACTIVO. */
+  bandaPrioridad: BandaPrioridad | null;
   status: IncidentStatus;
   severity: IncidentSeverity;
   createdBy: string;
