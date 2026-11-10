@@ -50,6 +50,7 @@ para que el cierre quede registrado de forma confiable.
 | Técnica | T13 | Pruebas de HU-04 y HU-05, y adecuación de las 42 pruebas anteriores | Alta | 1 día | Pendiente |
 | Técnica | T14 | Semilla con imágenes e índices, README y cierre del sprint | Media | 0,5 día | Pendiente |
 | HU-02 | T15 | Verificar el duplicado por cercanía al elegir la categoría (paso 2), sin crear nada, y color de éxito en "Confirmación registrada" (D-24) | Media | 0,5 día | Hecha (09/11/2026) |
+| HU-04 | DEF-01 | Defecto encontrado al probar la T08: la capa del mapa de calor no se dibujaba desde el Sprint 1. Causa: `leaflet.heat` es un script clásico que se registra sobre una variable global `L`, que no existe dentro del bundle de Next, y el error quedaba oculto en un `catch`. Corrección: se publica en `window.L` el objeto de Leaflet del mapa antes de cargarlo, y el error ya no se oculta | Alta | 0,25 día | Corregido (09/11/2026) |
 
 ## Especificación por tarea
 
@@ -204,6 +205,7 @@ Las 42 pruebas del Sprint 2 siguen pasando. Las que enviaban JSON al alta se ada
 - **Fechas reales:** del __/__ al __/__.
 - **Sprint Backlog final:** la tabla de arriba, con los estados y estimados reales.
 - **Pruebas:** __ en total. Qué cubren: …
+- **Defectos encontrados y corregidos:** DEF-01 (mapa de calor que no se dibujaba desde el Sprint 1; ver el Sprint Backlog).
 - **Decisiones aplicadas:** …
 - **Pantallas para el documento:**
   - panel ordenado por prioridad;
