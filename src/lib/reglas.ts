@@ -70,6 +70,17 @@ export const IMAGEN = {
   CACHE_SEGUNDOS: 604800,
 } as const;
 
+/** Resolución y desestimación (HU-05). */
+export const EVIDENCIA = {
+  /** PDF de información oficial que carga el operador (imagenes.md): máximo 2 MB, sin miniatura. */
+  PDF_MAXIMO_BYTES: 2 * 1024 * 1024,
+} as const;
+/** Observación del operador al rechazar una resolución o desestimar (VARCHAR(300) en RESOLUCION). */
+export const OBSERVACION = { MINIMO: 10, MAXIMO: 300 } as const;
+/** D-09: 3 reportes desestimados en 30 días suspenden la cuenta (plan de R02). */
+export const DESESTIMADOS_PARA_SUSPENSION = 3;
+export const DIAS_VENTANA_SUSPENSION = 30;
+
 /**
  * Índice de prioridad (HU-04): IP = 100 × (0,5·S + 0,3·C + 0,2·T), solo para incidentes activos.
  *   S = peso de la severidad (tabla SEVERIDAD)

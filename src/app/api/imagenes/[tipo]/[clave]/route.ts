@@ -3,10 +3,11 @@
  *
  *   GET /api/imagenes/miniaturas/<hash>.jpg  → miniatura, para cualquier usuario autenticado
  *   GET /api/imagenes/fotos/<hash>.jpg       → foto privada, solo para el operador
+ *   GET /api/imagenes/documentos/<hash>.pdf  → PDF de información oficial (evidencia), solo para el operador
  *
  * Coincide con el documento: "se publica una miniatura" y la imagen completa
- * queda privada (la ve el operador para validar). Las imágenes no están en
- * public/: solo se llega a ellas por esta ruta, que exige sesión (D-14, B-03).
+ * queda privada (la ve el operador para validar). Los archivos no están en
+ * public/: solo se llega a ellos por esta ruta, que exige sesión (D-14, B-03).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requerirSesion } from "@/lib/servidor/sesion";
@@ -24,20 +25,23 @@ export async function GET(req: NextRequest, { params }: { params: { tipo: string
   const clave = `${params.tipo}/${params.clave}`;
   if (!esClaveValida(clave)) return error(400, "CLAVE_INVALIDA", "La imagen pedida no es válida.");
 
-  if (params.tipo === "fotos" && s.usuario.rol !== "OPERADOR") {
-    return error(403, "SIN_PERMISO", "La foto completa solo la puede ver un operador.");
+  if (params.tipo !== "miniaturas" && s.usuario.rol !== "OPERADOR") {
+    return error(403, "SIN_PERMISO", "La foto completa y los documentos solo los puede ver un operador.");
   }
 
   const datos = await almacenamiento.leer(clave);
   if (!datos) return error(404, "IMAGEN_INEXISTENTE", "La imagen no existe.");
 
+  const esPdf = params.tipo === "documentos";
   return new NextResponse(new Uint8Array(datos), {
     headers: {
-      "Content-Type": "image/jpeg",
+      "Content-Type": esPdf ? "application/pdf" : "image/jpeg",
       "Content-Length": String(datos.length),
       // La clave es la huella: el contenido nunca cambia. "private": solo la caché del navegador, no la de un proxy.
       "Cache-Control": `private, max-age=${IMAGEN.CACHE_SEGUNDOS}, immutable`,
       "X-Content-Type-Options": "nosniff",
+      // El PDF se muestra en el navegador, pero sin ejecutar nada embebido en la página de SIRU.
+      ...(esPdf ? { "Content-Disposition": "inline", "Content-Security-Policy": "sandbox" } : {}),
     },
   });
 }

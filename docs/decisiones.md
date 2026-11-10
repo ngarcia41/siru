@@ -90,7 +90,7 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
   de fin de la suspensión, y el DER no tiene ese campo. La rehabilitación por el administrador no cambia la base.
 - Impacto en el documento: una oración en "Controles sobre la ubicación, la frecuencia y el uso".
 
-### D-10 · Quién informa y quién valida la resolución (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
+### D-10 · Quién informa y quién valida la resolución (Interpretación · Implementada el 09/11/2026 en la T09 · Sprint 3)
 - **Vecino:** solo sobre un incidente ACTIVO, a menos de 50 m, con precisión de 25 m o menos y foto.
 - **Operador:** carga la "información oficial" con evidencia (foto o PDF), sin control de distancia, según la tabla de estados y la de perfiles.
 - **Validación:** el documento no exige que valide un operador distinto del que informó. Con un solo operador en la
@@ -99,7 +99,7 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
   limitación de la demo, que tiene un solo operador, y se presenta así en la defensa.
 - Impacto en el documento: una línea en las limitaciones.
 
-### D-11 · Unicidad de la evidencia (Implementación · Aprobada el 09/11/2026 · Sprint 3)
+### D-11 · Unicidad de la evidencia (Implementación · Implementada el 09/11/2026 en la T09 · Sprint 3)
 La evidencia no puede repetir el hash de ninguna imagen ya registrada, ni de un incidente ni de otra resolución.
 Esto aplica la regla del documento de "rechazar la carga de un archivo idéntico a otro ya registrado" e impide usar la
 foto original del problema como prueba de que se arregló.

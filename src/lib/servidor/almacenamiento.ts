@@ -7,6 +7,7 @@
  * Claves (la huella SHA-256 del original identifica el archivo):
  *   fotos/<hash>.jpg       versión privada, hasta 1600 px (foto_ruta o evidencia_ruta)
  *   miniaturas/<hash>.jpg  miniatura de 480 px; se deriva de la anterior, sin columna propia
+ *   documentos/<hash>.pdf  información oficial que carga el operador como evidencia (evidencia_ruta)
  *
  * Como la clave sale de la huella, el contenido de una clave nunca cambia: por
  * eso se puede servir con una caché larga e inmutable.
@@ -14,10 +15,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-export type TipoImagen = "fotos" | "miniaturas";
+export type TipoArchivo = "fotos" | "miniaturas" | "documentos";
 
 /** Formato estricto de una clave: carpeta conocida, 64 caracteres hexadecimales y extensión. */
-const CLAVE_VALIDA = /^(fotos|miniaturas)\/[0-9a-f]{64}\.jpg$/;
+const CLAVE_VALIDA = /^((fotos|miniaturas)\/[0-9a-f]{64}\.jpg|documentos\/[0-9a-f]{64}\.pdf)$/;
 
 export function esClaveValida(clave: string): boolean {
   return CLAVE_VALIDA.test(clave);
@@ -25,6 +26,8 @@ export function esClaveValida(clave: string): boolean {
 
 export const claveFoto = (hash: string) => `fotos/${hash}.jpg`;
 export const claveMiniatura = (hash: string) => `miniaturas/${hash}.jpg`;
+/** PDF de información oficial del operador (HU-05): privado y sin miniatura. */
+export const claveDocumento = (hash: string) => `documentos/${hash}.pdf`;
 
 /** Miniatura que corresponde a una foto: misma huella, otra carpeta. */
 export function miniaturaDe(claveDeFoto: string): string {

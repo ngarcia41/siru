@@ -27,7 +27,7 @@ const SEVERIDAD_A_ID: Record<IncidentSeverity, number> = { low: 1, medium: 2, hi
 const ESTADOS_ABIERTOS = ["SIN_VERIFICAR", "ACTIVO", "EN_REVISION"];
 
 /** Punto PostGIS a partir de dos parámetros posicionales ($n = longitud, $m = latitud). */
-function punto(lngParam: number, latParam: number) {
+export function punto(lngParam: number, latParam: number) {
   return `ST_SetSRID(ST_MakePoint($${lngParam}, $${latParam}), 4326)`;
 }
 
@@ -91,11 +91,11 @@ export type Resultado<T> =
   | { ok: true; datos: T; mensaje?: string }
   | { ok: false; status: number; codigo: string; mensaje: string; extra?: Record<string, unknown> };
 
-function rechazo(status: number, codigo: string, mensaje: string, extra?: Record<string, unknown>): Resultado<never> {
+export function rechazo(status: number, codigo: string, mensaje: string, extra?: Record<string, unknown>): Resultado<never> {
   return { ok: false, status, codigo, mensaje, extra };
 }
 
-function validarPrecision(precision: unknown): Resultado<never> | null {
+export function validarPrecision(precision: unknown): Resultado<never> | null {
   if (typeof precision !== "number" || !Number.isFinite(precision) || precision <= 0) {
     return rechazo(400, "PRECISION_FALTANTE", "Falta la precisión informada por el GPS.");
   }

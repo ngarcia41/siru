@@ -383,6 +383,65 @@ async function main() {
   const invalida = await reclasificar(op, incConFoto, { severidad: "urgente" });
   caso("Sin cambios o con valores inválidos se rechaza (400)",
     sinCambio.status === 400 && sinCambio.data?.error === "SIN_CAMBIOS" && invalida.status === 400, `${sinCambio.data?.error}, ${invalida.data?.error}`);
+
+  // --- HU-05 criterio 1: informe de la resolución (T09, D-10, D-11) ---
+  // Incidentes activos de la semilla: 5 (bache medio) y 8 (luminaria alta).
+  const informar = async (s: Sesion, id: unknown, d: {
+    lugar?: { lat: number; lng: number }; precision?: number; hash?: string; foto?: Buffer | null; documento?: Buffer;
+  }) => {
+    const f = new FormData();
+    if (d.documento) f.append("documento", new Blob([new Uint8Array(d.documento)], { type: "application/pdf" }), "informe.pdf");
+    else if (d.foto !== null) f.append("foto", new Blob([new Uint8Array(d.foto ?? (await imagenDePrueba()))], { type: "image/jpeg" }), "foto.jpg");
+    if (d.hash) f.append("hashOriginal", d.hash);
+    if (d.lugar) { f.append("lat", String(d.lugar.lat)); f.append("lng", String(d.lugar.lng)); }
+    if (d.precision !== undefined) f.append("gpsAccuracy", String(d.precision));
+    return llamar(s, "POST", `/api/incidents/${id}/resolucion`, f);
+  };
+  const inc5 = { lat: -34.6468, lng: -58.5600 };
+  const hashInc5 = (await db.query("SELECT hash_foto FROM incidente WHERE incidente_id = 5")).rows[0].hash_foto;
+  r = await informar(v2, 5, { lugar: alNorte(inc5, 80), precision: 8, hash: hashFoto("res-lejos") });
+  caso("Un vecino a 80 m no puede informar la resolución (403 FUERA_DE_RADIO)", r.status === 403 && r.data?.error === "FUERA_DE_RADIO", r.data?.message);
+  r = await informar(v2, 5, { lugar: alNorte(inc5, 30), precision: 8, hash: hashFoto("res-sin-foto"), foto: null });
+  caso("Informar la resolución sin foto se rechaza (400)", r.status === 400 && r.data?.error === "EVIDENCIA_OBLIGATORIA", r.data?.message);
+  r = await informar(v2, 5, { lugar: alNorte(inc5, 30), precision: 8, hash: hashInc5 });
+  caso("La evidencia no puede ser la misma foto del reporte (409, D-11)", r.status === 409 && r.data?.error === "EVIDENCIA_DUPLICADA", r.data?.message);
+  r = await informar(v2, 5, { lugar: alNorte(inc5, 30), precision: 40, hash: hashFoto("res-impreciso") });
+  caso("Informar con una precisión GPS mayor a 25 m se rechaza (422)", r.status === 422 && r.data?.error === "PRECISION_INSUFICIENTE", r.data?.message);
+  const hashRes5 = hashFoto("res-5");
+  r = await informar(v2, 5, { lugar: alNorte(inc5, 30), precision: 8, hash: hashRes5 });
+  const v2Id = (await db.query("SELECT usuario_id FROM usuario WHERE email = 'vecino2@siru.local'")).rows[0].usuario_id;
+  const res5 = (await db.query(
+    `SELECT r.informada_por, r.fecha_informe, r.resultado, r.evidencia_ruta, r.hash_evidencia, i.estado, i.indice_prioridad
+       FROM resolucion r JOIN incidente i USING (incidente_id) WHERE r.incidente_id = 5`
+  )).rows[0];
+  caso("Un vecino a 30 m con foto informa la resolución: EN_REVISION, con informada_por y fecha_informe",
+    r.status === 201 && r.data?.data?.status === "review" && res5?.estado === "EN_REVISION" && res5?.informada_por === v2Id
+      && !!res5?.fecha_informe && res5?.resultado === "PENDIENTE",
+    JSON.stringify({ estado: res5?.estado, informadaPor: res5?.informada_por, resultado: res5?.resultado }));
+  caso("En revisión el índice queda en NULL y la evidencia se guarda como foto privada",
+    res5?.indice_prioridad === null && res5?.evidencia_ruta === `fotos/${hashRes5}.jpg` && res5?.hash_evidencia === hashRes5,
+    res5?.evidencia_ruta);
+  const audInf = await ultimaAuditoria(5, "INFORMA_RESOLUCION");
+  caso("Se audita INFORMA_RESOLUCION con el perfil, la distancia y la huella",
+    audInf?.detalle?.perfil === "VECINO" && Math.round(audInf?.detalle?.distanciaMetros) === 30 && audInf?.detalle?.hashEvidencia === hashRes5,
+    JSON.stringify(audInf?.detalle));
+  r = await informar(v1, 5, { lugar: alNorte(inc5, 10), precision: 8, hash: hashFoto("res-5-bis") });
+  caso("Mientras está en revisión no admite otro informe (409)", r.status === 409 && r.data?.error === "ESTADO_NO_RESOLUBLE", r.data?.message);
+
+  // El operador carga la información oficial como PDF, sin control de distancia.
+  const pdf = Buffer.from(`%PDF-1.4\n% Informe oficial de prueba ${Date.now()}\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`, "latin1");
+  r = await informar(op, 8, { documento: Buffer.from("esto no es un PDF") });
+  caso("El operador no puede adjuntar un archivo que no sea PDF (400)", r.status === 400 && r.data?.error === "DOCUMENTO_INVALIDO", r.data?.message);
+  r = await informar(op, 8, { documento: pdf });
+  const res8 = (await db.query("SELECT evidencia_ruta, hash_evidencia FROM resolucion WHERE incidente_id = 8")).rows[0];
+  caso("El operador informa con un PDF oficial, sin control de distancia: EN_REVISION",
+    r.status === 201 && r.data?.data?.status === "review" && /^documentos\/[0-9a-f]{64}\.pdf$/.test(res8?.evidencia_ruta ?? ""),
+    res8?.evidencia_ruta);
+  const pdfOp = await pedirImagen(op, `/api/imagenes/${res8?.evidencia_ruta}`);
+  const pdfVecino = await pedirImagen(v1, `/api/imagenes/${res8?.evidencia_ruta}`);
+  caso("El PDF lo ve el operador y no un vecino",
+    pdfOp.status === 200 && pdfOp.headers.get("content-type") === "application/pdf" && pdfVecino.status === 403,
+    `operador ${pdfOp.status}, vecino ${pdfVecino.status}`);
   r = await alta(op, { ...datos, geom: alNorte(base, 2000), photoHash: hashFoto("d"), gpsAccuracy: 10 });
   caso("Un operador no registra incidentes", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
   r = await llamar(op, "PATCH", `/api/incidents/${incId}`, { action: "resolve", observacion: "Bacheo verificado en el lugar." });
