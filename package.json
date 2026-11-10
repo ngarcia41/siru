@@ -10,6 +10,7 @@
     "db:migrar": "tsx scripts/migrar.ts",
     "db:semilla": "tsx scripts/semilla.ts",
     "prueba": "tsx scripts/prueba.ts",
+    "tareas:diarias": "tsx scripts/tareas-diarias.ts",
     "admin:crear-operador": "tsx scripts/crear-operador.ts",
     "admin:blanquear-clave": "tsx scripts/blanquear-clave.ts"
   },

@@ -58,7 +58,7 @@ En la demo y en producción vale 25. Impacto en el documento: ninguno.
 - **Redondeo:** a 2 decimales en la base (NUMERIC(5,2)). En pantalla se muestra entero.
 - Impacto en el documento: una oración en "Regla de priorización".
 
-### D-07 · Programación de las tareas diarias (Implementación · Aprobada el 09/11/2026 · Sprint 3)
+### D-07 · Programación de las tareas diarias (Implementación · Implementada el 09/11/2026 en la T06 · Sprint 3)
 - Decisión: `scripts/tareas-diarias.ts` (`npm run tareas:diarias`) recalcula los IP a las 00:30, hora de Argentina.
   Es idempotente (se puede correr dos veces sin efecto adicional). En el servidor lo dispara cron; en desarrollo se
   corre a mano o con el Programador de tareas de Windows.

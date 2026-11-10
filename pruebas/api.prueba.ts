@@ -12,6 +12,8 @@
  */
 import "dotenv/config";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { Client } from "pg";
 import sharp from "sharp";
 import { recalcularIndices } from "../src/lib/servidor/prioridad";
@@ -247,6 +249,18 @@ async function main() {
   caso("Sin verificar no tiene índice; al llegar a 3 puntos se calcula y una confirmación más lo recalcula (65,00 → 70,00)",
     indicePrevio === null && alActivar === "65.00" && conCuatro === "70.00" && r.status === 200,
     `${indicePrevio} → ${alActivar} → ${conCuatro}`);
+
+  // --- HU-04: tarea diaria de las 00:30 (T06, D-07) ---
+  await db.query("UPDATE incidente SET fecha_activacion = fecha_activacion - interval '1 day' WHERE incidente_id = $1", [incConFoto]);
+  const tareaDiaria = () => spawnSync(process.execPath, [join("node_modules", "tsx", "dist", "cli.mjs"), "scripts/tareas-diarias.ts"],
+    { env: process.env, encoding: "utf8" });
+  const corrida1 = tareaDiaria();
+  const trasUnDia = await indiceDe(incConFoto);
+  const corrida2 = tareaDiaria();
+  const trasRepetir = await indiceDe(incConFoto);
+  caso("La tarea diaria recalcula después de mover fecha_activacion un día atrás (70,00 → 70,67)",
+    corrida1.status === 0 && trasUnDia === "70.67", `${conCuatro} → ${trasUnDia}`);
+  caso("La tarea diaria es idempotente: repetirla no cambia el índice", corrida2.status === 0 && trasRepetir === trasUnDia, `${trasUnDia} → ${trasRepetir}`);
 
   // --- Permisos por perfil ---
   r = await llamar(v1, "PATCH", `/api/incidents/${incId}`, { action: "resolve" });

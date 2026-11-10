@@ -99,6 +99,21 @@ npm run admin:blanquear-clave -- vecino@correo.com      # blanquea una clave y d
 Cada script muestra la clave temporal una sola vez. Entregala por un canal
 seguro.
 
+### Tareas diarias (00:30, hora de Argentina)
+
+```powershell
+npm run tareas:diarias   # recalcula el índice de prioridad de los incidentes activos
+```
+
+El componente "tiempo sin resolver" del índice cambia todos los días aunque
+nadie confirme, por eso se recalcula a diario. La tarea se puede repetir sin
+efectos adicionales.
+
+- **En el servidor (Sprint 4):** con cron, `CRON_TZ=America/Argentina/Buenos_Aires`
+  y la línea `30 0 * * * cd /ruta/a/siru && npm run tareas:diarias`.
+- **En desarrollo:** a mano, o con el Programador de tareas de Windows (tarea
+  diaria a las 00:30 que ejecute `npm run tareas:diarias` en esta carpeta).
+
 ## 6. Pruebas funcionales
 
 `pruebas/api.prueba.ts` recorre 42 casos de las historias del Sprint 2:
