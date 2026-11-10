@@ -2,7 +2,9 @@
  * SIRU — app/api/incidents/[id]/route.ts
  *
  *   GET   /api/incidents/:id  → un incidente
- *   PATCH /api/incidents/:id  → { action: "resolve", observacion? } solo operador
+ *   PATCH /api/incidents/:id  → solo operador:
+ *     { action: "reclasificar", severidad?, categoria? }  (HU-04, D-13; severidad: low | medium | high)
+ *     { action: "resolve", observacion? }  cierre directo del Sprint 2, se reemplaza en la T10 (D-18)
  *
  * El cierre queda registrado en RESOLUCION (quién lo validó y cuándo) y en la
  * auditoría. El informe del vecino con evidencia fotográfica se agrega en el
@@ -10,7 +12,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requerirSesion } from "@/lib/servidor/sesion";
-import { obtenerIncidente, resolverIncidente } from "@/lib/servidor/incidentes";
+import { obtenerIncidente, reclasificarIncidente, resolverIncidente } from "@/lib/servidor/incidentes";
 import { error, ipDe, leerJson } from "@/lib/servidor/http";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +36,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const id = idValido(params.id);
   if (!id) return error(404, "NO_ENCONTRADO", "Incidente no encontrado.");
 
-  const body = await leerJson<{ action?: string; observacion?: string }>(req);
+  const body = await leerJson<{ action?: string; observacion?: string; severidad?: unknown; categoria?: unknown }>(req);
+
+  if (body?.action === "reclasificar") {
+    try {
+      const r = await reclasificarIncidente(s.usuario.id, id, { severidad: body.severidad, categoria: body.categoria }, ipDe(req));
+      if (!r.ok) return error(r.status, r.codigo, r.mensaje, r.extra);
+      return NextResponse.json({ success: true, data: r.datos });
+    } catch (e) {
+      console.error("[SIRU API] Error al reclasificar:", e);
+      return error(500, "ERROR_INTERNO", "No se pudo reclasificar el incidente.");
+    }
+  }
+
   if (body?.action !== "resolve") return error(400, "ACCION_INVALIDA", "Acción no reconocida.");
 
   try {

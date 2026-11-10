@@ -351,6 +351,38 @@ async function main() {
   caso("El alta mantiene su propio control de duplicados (409, con el mismo aviso)",
     r.status === 409 && r.data?.error === "GEOFENCE_DUPLICATE" && r.data?.nearbyIncident?.id === "1" && r.data?.motivoNoConfirmable === null,
     `HTTP ${r.status} · ${r.data?.error}`);
+
+  // --- HU-04 criterio 4: reclasificación por el operador (T07, D-13) ---
+  const reclasificar = (s: Sesion, id: unknown, cambios: Record<string, unknown>) =>
+    llamar(s, "PATCH", `/api/incidents/${id}`, { action: "reclasificar", ...cambios });
+  const ultimaAuditoria = async (id: unknown, accion: string) => (await db.query(
+    "SELECT usuario_id, detalle FROM auditoria WHERE incidente_id = $1 AND accion = $2 ORDER BY auditoria_id DESC LIMIT 1", [id, accion]
+  )).rows[0];
+  r = await reclasificar(v1, incConFoto, { severidad: "low" });
+  caso("Un vecino no puede reclasificar (403)", r.status === 403, `HTTP ${r.status}`);
+  const ipAntes = await indiceDe(incConFoto);
+  r = await reclasificar(op, incConFoto, { severidad: "low" });
+  const ipDespues = await indiceDe(incConFoto);
+  const audSev = await ultimaAuditoria(incConFoto, "CAMBIO_SEVERIDAD");
+  caso("El operador baja la severidad de un activo: el índice se recalcula (70,67 → 37,17)",
+    r.status === 200 && r.data?.data?.severity === "low" && ipAntes === "70.67" && ipDespues === "37.17", `${ipAntes} → ${ipDespues}`);
+  caso("El cambio de severidad se audita con los valores e índices anterior y nuevo",
+    audSev?.detalle?.severidadAnterior === "alta" && audSev?.detalle?.severidadNueva === "baja"
+      && audSev?.detalle?.indiceAnterior === 70.67 && audSev?.detalle?.indiceNuevo === 37.17 && !!audSev?.usuario_id,
+    JSON.stringify(audSev?.detalle));
+  r = await reclasificar(op, incConFoto, { categoria: "Otro" });
+  const audCat = await ultimaAuditoria(incConFoto, "CAMBIO_CATEGORIA");
+  caso("El cambio de categoría no recalcula el índice y se audita",
+    r.status === 200 && r.data?.data?.category === "Otro" && (await indiceDe(incConFoto)) === "37.17"
+      && audCat?.detalle?.categoriaAnterior === "Bache" && audCat?.detalle?.categoriaNueva === "Otro",
+    JSON.stringify(audCat?.detalle));
+  r = await reclasificar(op, 1, { categoria: "Luminaria" });
+  caso("Reclasificar la categoría no puede dejar un duplicado a menos de 50 m (409 con el existente)",
+    r.status === 409 && r.data?.error === "GEOFENCE_DUPLICATE" && !!r.data?.nearbyIncident?.id, `${r.data?.error} · incidente ${r.data?.nearbyIncident?.id}`);
+  const sinCambio = await reclasificar(op, incConFoto, { severidad: "low" });
+  const invalida = await reclasificar(op, incConFoto, { severidad: "urgente" });
+  caso("Sin cambios o con valores inválidos se rechaza (400)",
+    sinCambio.status === 400 && sinCambio.data?.error === "SIN_CAMBIOS" && invalida.status === 400, `${sinCambio.data?.error}, ${invalida.data?.error}`);
   r = await alta(op, { ...datos, geom: alNorte(base, 2000), photoHash: hashFoto("d"), gpsAccuracy: 10 });
   caso("Un operador no registra incidentes", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
   r = await llamar(op, "PATCH", `/api/incidents/${incId}`, { action: "resolve", observacion: "Bacheo verificado en el lugar." });
@@ -366,6 +398,8 @@ async function main() {
     acciones.join(" → "));
   const ip = r.data?.data?.[0]?.direccion_ip;
   caso("Cada registro guarda la dirección IP", ip === "190.210.0.10", ip);
+  r = await reclasificar(op, incId, { severidad: "medium" });
+  caso("Un incidente cerrado no se reclasifica (409)", r.status === 409 && r.data?.error === "INCIDENTE_CERRADO", r.data?.message);
   let bloqueada = false;
   try { await db.query("UPDATE auditoria SET accion = 'X' WHERE auditoria_id = (SELECT min(auditoria_id) FROM auditoria)"); } catch { bloqueada = true; }
   caso("La base rechaza modificar la auditoría", bloqueada);

@@ -108,7 +108,7 @@ foto original del problema como prueba de que se arregló.
 Se puede desestimar un incidente en SIN_VERIFICAR o ACTIVO. Uno EN_REVISION primero se valida o se rechaza.
 La observación es obligatoria y se guarda en el detalle de la auditoría. `fecha_cierre` se completa también al desestimar.
 
-### D-13 · Reclasificar la categoría (Interpretación · Aprobada el 09/11/2026 · Sprint 3)
+### D-13 · Reclasificar la categoría (Interpretación · Implementada el 09/11/2026 en la T07 · Sprint 3)
 La tabla de perfiles permite al operador reclasificar la categoría y la severidad. Si con la nueva categoría queda
 un incidente abierto de esa categoría a menos de 50 m, se rechaza con 409 y se muestra el existente, para que el
 operador desestime el duplicado. El cambio de categoría no recalcula el IP; el de severidad sí.

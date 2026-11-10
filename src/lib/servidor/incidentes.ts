@@ -115,7 +115,9 @@ export interface DuplicadoCercano {
 async function buscarDuplicado(
   c: PoolClient,
   usuarioId: number,
-  d: { lat: number; lng: number; categoria: string }
+  d: { lat: number; lng: number; categoria: string },
+  /** Al reclasificar, el propio incidente no cuenta como duplicado (D-13). */
+  excluirIncidenteId: number | null = null
 ): Promise<DuplicadoCercano | null> {
   const cercano = (await c.query(
     `SELECT i.incidente_id, i.usuario_id, i.estado,
@@ -124,8 +126,9 @@ async function buscarDuplicado(
        FROM incidente i JOIN categoria c ON c.categoria_id = i.categoria_id
       WHERE c.nombre = $3 AND i.estado = ANY($4)
         AND ST_DWithin(i.ubicacion::geography, ${punto(1, 2)}::geography, $5)
+        AND ($7::int IS NULL OR i.incidente_id <> $7::int)
       ORDER BY distancia LIMIT 1`,
-    [d.lng, d.lat, d.categoria, ESTADOS_ABIERTOS, RADIO_METROS, usuarioId]
+    [d.lng, d.lat, d.categoria, ESTADOS_ABIERTOS, RADIO_METROS, usuarioId, excluirIncidenteId]
   )).rows[0];
   if (!cercano) return null;
 
@@ -316,6 +319,91 @@ export async function confirmarIncidente(
 // ---------------------------------------------------------------------------
 // Cierre validado por el operador (el flujo con evidencia del vecino es HU-05, Sprint 3)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Reclasificación por el operador (HU-04 criterio 4, D-13)
+// ---------------------------------------------------------------------------
+const SEVERIDAD_DE_ENTRADA: Record<string, number> = { ...SEVERIDAD_A_ID, baja: 1, media: 2, alta: 3 };
+
+/**
+ * El operador cambia la severidad, la categoría o ambas de un incidente no
+ * cerrado. La severidad recalcula el índice (si el incidente está activo); la
+ * categoría no, pero no puede dejar dos incidentes abiertos de la misma
+ * categoría a menos de 50 m (D-13). Cada cambio se audita con los valores
+ * anteriores y nuevos, y el índice anterior y el nuevo.
+ */
+export async function reclasificarIncidente(
+  operadorId: number,
+  incidenteId: number,
+  d: { severidad?: unknown; categoria?: unknown },
+  ip: string | null
+): Promise<Resultado<Incident>> {
+  if (d.severidad === undefined && d.categoria === undefined) {
+    return rechazo(400, "SIN_CAMBIOS", "Indicá la severidad o la categoría nuevas.");
+  }
+  const severidadId = d.severidad === undefined ? null : SEVERIDAD_DE_ENTRADA[String(d.severidad)] ?? 0;
+  if (severidadId === 0) return rechazo(400, "SEVERIDAD_INVALIDA", "La severidad no es válida.");
+  const categoria = d.categoria === undefined ? null : String(d.categoria);
+  if (categoria !== null && !(CATEGORIAS as readonly string[]).includes(categoria)) {
+    return rechazo(400, "CATEGORIA_INVALIDA", "La categoría no es válida.");
+  }
+
+  return transaccion(async (c) => {
+    const inc = (await c.query(
+      `SELECT i.estado, i.indice_prioridad, i.severidad_id, s.nombre AS severidad, c.nombre AS categoria,
+              ST_Y(i.ubicacion) AS lat, ST_X(i.ubicacion) AS lng
+         FROM incidente i JOIN severidad s ON s.severidad_id = i.severidad_id JOIN categoria c ON c.categoria_id = i.categoria_id
+        WHERE i.incidente_id = $1 FOR UPDATE OF i`,
+      [incidenteId]
+    )).rows[0];
+    if (!inc) return rechazo(404, "NO_ENCONTRADO", "Incidente no encontrado.");
+    if (!ESTADOS_ABIERTOS.includes(inc.estado)) {
+      return rechazo(409, "INCIDENTE_CERRADO", "Solo se pueden reclasificar incidentes sin verificar, activos o en revisión.");
+    }
+
+    const cambiaSeveridad = severidadId !== null && severidadId !== inc.severidad_id;
+    const cambiaCategoria = categoria !== null && categoria !== inc.categoria;
+    if (!cambiaSeveridad && !cambiaCategoria) {
+      return rechazo(400, "SIN_CAMBIOS", "La severidad y la categoría indicadas son las que ya tiene el incidente.");
+    }
+
+    if (cambiaCategoria) {
+      const cercano = await buscarDuplicado(c, operadorId, { lat: Number(inc.lat), lng: Number(inc.lng), categoria: categoria! }, incidenteId);
+      if (cercano) {
+        return rechazo(409, "GEOFENCE_DUPLICATE",
+          `Ya hay un incidente abierto de tipo "${categoria}" a ${Math.round(cercano.distanceMeters)} metros. Desestimá el duplicado en lugar de reclasificarlo.`,
+          { ...cercano });
+      }
+    }
+
+    const indiceAnterior = inc.indice_prioridad === null ? null : Number(inc.indice_prioridad);
+    await c.query(
+      `UPDATE incidente
+          SET severidad_id = COALESCE($2, severidad_id),
+              categoria_id = COALESCE((SELECT categoria_id FROM categoria WHERE nombre = $3), categoria_id)
+        WHERE incidente_id = $1`,
+      [incidenteId, cambiaSeveridad ? severidadId : null, cambiaCategoria ? categoria : null]
+    );
+    // Solo la severidad entra en la fórmula; recalcularIndices no hace nada si el incidente no está activo.
+    const [calculado] = cambiaSeveridad ? await recalcularIndices(c, { incidenteId }) : [];
+    const indiceNuevo = calculado ? calculado.indice : indiceAnterior;
+
+    if (cambiaSeveridad) {
+      const nueva = (await c.query("SELECT nombre FROM severidad WHERE severidad_id = $1", [severidadId])).rows[0].nombre;
+      await auditar("CAMBIO_SEVERIDAD", {
+        usuarioId: operadorId, incidenteId, ip,
+        detalle: { severidadAnterior: inc.severidad, severidadNueva: nueva, indiceAnterior, indiceNuevo },
+      }, c);
+    }
+    if (cambiaCategoria) {
+      await auditar("CAMBIO_CATEGORIA", {
+        usuarioId: operadorId, incidenteId, ip,
+        detalle: { categoriaAnterior: inc.categoria, categoriaNueva: categoria, indiceAnterior, indiceNuevo },
+      }, c);
+    }
+    return { ok: true, datos: (await obtenerIncidente(incidenteId, c))! };
+  });
+}
+
 export async function resolverIncidente(
   operadorId: number,
   incidenteId: number,
