@@ -16,7 +16,8 @@ import { auditar } from "./auditoria";
 import { almacenamiento, claveDocumento, claveFoto, claveMiniatura } from "./almacenamiento";
 import { validarExif, type ExifDeclarado } from "./imagen";
 import { obtenerIncidente, punto, rechazo, validarPrecision, type Resultado } from "./incidentes";
-import { RADIO_METROS } from "../reglas";
+import { OBSERVACION, RADIO_METROS } from "../reglas";
+import { recalcularIndices } from "./prioridad";
 import type { Incident } from "../types";
 
 export type PerfilInformante = "VECINO" | "OPERADOR";
@@ -124,6 +125,85 @@ export async function informarResolucion(
         ...(distancia !== null ? { distanciaMetros: Math.round(distancia * 10) / 10 } : {}),
       },
     }, c);
+    return { ok: true, datos: (await obtenerIncidente(incidenteId, c))! };
+  });
+}
+
+/** Valida y recorta la observación del operador (obligatoria al rechazar y al desestimar). */
+export function leerObservacion(valor: unknown, obligatoria: boolean): Resultado<string | null> {
+  const texto = typeof valor === "string" ? valor.trim() : "";
+  if (!texto) {
+    return obligatoria
+      ? rechazo(400, "OBSERVACION_OBLIGATORIA", `Escribí una observación de al menos ${OBSERVACION.MINIMO} caracteres.`)
+      : { ok: true, datos: null };
+  }
+  if (texto.length < OBSERVACION.MINIMO) {
+    return rechazo(400, "OBSERVACION_OBLIGATORIA", `La observación tiene que tener al menos ${OBSERVACION.MINIMO} caracteres.`);
+  }
+  if (texto.length > OBSERVACION.MAXIMO) {
+    return rechazo(400, "OBSERVACION_DEMASIADO_LARGA", `La observación puede tener hasta ${OBSERVACION.MAXIMO} caracteres.`);
+  }
+  return { ok: true, datos: texto };
+}
+
+/**
+ * HU-05 criterios 2 y 3: el operador valida o rechaza la resolución informada.
+ *   CONFIRMADA → el incidente pasa a RESUELTO con su fecha de cierre y el operador responsable.
+ *   RECHAZADA  → la observación es obligatoria; el incidente vuelve a ACTIVO, se recalcula su
+ *                índice y la evidencia rechazada queda registrada con su observación.
+ * D-10: puede validar el mismo operador que informó; la auditoría deja constancia de ambos pasos.
+ */
+export async function validarResolucion(
+  operadorId: number,
+  incidenteId: number,
+  d: { resultado: unknown; observacion: unknown },
+  ip: string | null
+): Promise<Resultado<Incident>> {
+  if (d.resultado !== "CONFIRMADA" && d.resultado !== "RECHAZADA") {
+    return rechazo(400, "RESULTADO_INVALIDO", "El resultado tiene que ser CONFIRMADA o RECHAZADA.");
+  }
+  const confirma = d.resultado === "CONFIRMADA";
+  const obs = leerObservacion(d.observacion, !confirma);
+  if (!obs.ok) return obs;
+
+  return transaccion(async (c) => {
+    const inc = (await c.query("SELECT estado FROM incidente WHERE incidente_id = $1 FOR UPDATE", [incidenteId])).rows[0];
+    if (!inc) return rechazo(404, "NO_ENCONTRADO", "Incidente no encontrado.");
+    const res = (await c.query(
+      `SELECT resolucion_id, informada_por FROM resolucion
+        WHERE incidente_id = $1 AND resultado = 'PENDIENTE' ORDER BY fecha_informe DESC LIMIT 1 FOR UPDATE`,
+      [incidenteId]
+    )).rows[0];
+    if (inc.estado !== "EN_REVISION" || !res) {
+      return rechazo(409, "SIN_RESOLUCION_PENDIENTE", "El incidente no tiene una resolución pendiente de validar.");
+    }
+
+    await c.query(
+      `UPDATE resolucion SET resultado = $2, validada_por = $3, fecha_validacion = now(), observacion = $4
+        WHERE resolucion_id = $1`,
+      [res.resolucion_id, d.resultado, operadorId, obs.datos]
+    );
+
+    if (confirma) {
+      await c.query(
+        "UPDATE incidente SET estado = 'RESUELTO', fecha_cierre = now(), indice_prioridad = NULL WHERE incidente_id = $1",
+        [incidenteId]
+      );
+      await auditar("VALIDA_RESOLUCION", {
+        usuarioId: operadorId, incidenteId, ip,
+        detalle: { resolucionId: res.resolucion_id, informadaPor: res.informada_por, estadoAnterior: "EN_REVISION", estadoNuevo: "RESUELTO", observacion: obs.datos },
+      }, c);
+    } else {
+      await c.query("UPDATE incidente SET estado = 'ACTIVO' WHERE incidente_id = $1", [incidenteId]);
+      const [calculado] = await recalcularIndices(c, { incidenteId });
+      await auditar("RECHAZA_RESOLUCION", {
+        usuarioId: operadorId, incidenteId, ip,
+        detalle: {
+          resolucionId: res.resolucion_id, informadaPor: res.informada_por, estadoAnterior: "EN_REVISION", estadoNuevo: "ACTIVO",
+          observacion: obs.datos, indicePrioridad: calculado?.indice ?? null,
+        },
+      }, c);
+    }
     return { ok: true, datos: (await obtenerIncidente(incidenteId, c))! };
   });
 }

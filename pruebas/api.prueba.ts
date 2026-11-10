@@ -263,8 +263,8 @@ async function main() {
   caso("La tarea diaria es idempotente: repetirla no cambia el índice", corrida2.status === 0 && trasRepetir === trasUnDia, `${trasUnDia} → ${trasRepetir}`);
 
   // --- Permisos por perfil ---
-  r = await llamar(v1, "PATCH", `/api/incidents/${incId}`, { action: "resolve" });
-  caso("Un vecino no puede registrar el cierre", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
+  r = await llamar(v1, "POST", `/api/incidents/${incId}/resolucion/validar`, { resultado: "CONFIRMADA" });
+  caso("Un vecino no puede validar el cierre", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
   r = await llamar(v1, "GET", "/api/auditoria");
   caso("Un vecino no puede consultar la auditoría", r.status === 403, `HTTP ${r.status}`);
 
@@ -442,18 +442,60 @@ async function main() {
   caso("El PDF lo ve el operador y no un vecino",
     pdfOp.status === 200 && pdfOp.headers.get("content-type") === "application/pdf" && pdfVecino.status === 403,
     `operador ${pdfOp.status}, vecino ${pdfVecino.status}`);
+
+  // --- HU-05 criterios 2 y 3: validar o rechazar la resolución (T10) ---
+  const validar = (s: Sesion, id: unknown, cuerpo: Record<string, unknown>) =>
+    llamar(s, "POST", `/api/incidents/${id}/resolucion/validar`, cuerpo);
+  const opId = (await db.query("SELECT usuario_id FROM usuario WHERE email = 'operador@siru.local'")).rows[0].usuario_id;
+  r = await validar(op, 5, { resultado: "TAL_VEZ" });
+  caso("Un resultado distinto de CONFIRMADA o RECHAZADA se rechaza (400)", r.status === 400 && r.data?.error === "RESULTADO_INVALIDO", r.data?.message);
+  r = await validar(op, 5, { resultado: "CONFIRMADA" });
+  const val5 = (await db.query(
+    `SELECT r.informada_por, r.validada_por, r.fecha_validacion, r.resultado, i.estado, i.fecha_cierre
+       FROM resolucion r JOIN incidente i USING (incidente_id) WHERE r.incidente_id = 5`
+  )).rows[0];
+  caso("El operador valida: RESUELTO, con fecha_cierre, validada_por y fecha_validacion (y quién informó)",
+    r.status === 200 && val5?.estado === "RESUELTO" && !!val5?.fecha_cierre && val5?.validada_por === opId
+      && !!val5?.fecha_validacion && val5?.resultado === "CONFIRMADA" && val5?.informada_por === v2Id,
+    JSON.stringify({ estado: val5?.estado, validadaPor: val5?.validada_por, informadaPor: val5?.informada_por }));
+  caso("Se audita VALIDA_RESOLUCION", !!(await ultimaAuditoria(5, "VALIDA_RESOLUCION")), "");
+  r = await validar(op, 8, { resultado: "RECHAZADA" });
+  const corta = await validar(op, 8, { resultado: "RECHAZADA", observacion: "No." });
+  caso("Rechazar sin observación, o con una de menos de 10 caracteres, se rechaza (400)",
+    r.status === 400 && r.data?.error === "OBSERVACION_OBLIGATORIA" && corta.status === 400, `${r.data?.error}, ${corta.data?.error}`);
+  r = await validar(op, 8, { resultado: "RECHAZADA", observacion: "La luminaria sigue apagada según el recorrido nocturno." });
+  const rech8 = (await db.query(
+    `SELECT r.resultado, r.observacion, r.evidencia_ruta, r.validada_por, i.estado, i.indice_prioridad
+       FROM resolucion r JOIN incidente i USING (incidente_id) WHERE r.incidente_id = 8`
+  )).rows[0];
+  const evidenciaConservada = await pedirImagen(op, `/api/imagenes/${rech8?.evidencia_ruta}`);
+  caso("Con observación vuelve a ACTIVO y se recalcula el índice (luminaria alta, 3 puntos, más de 30 días: 85,00)",
+    r.status === 200 && rech8?.estado === "ACTIVO" && rech8?.indice_prioridad === "85.00", `${rech8?.estado} · ${rech8?.indice_prioridad}`);
+  caso("La evidencia rechazada se conserva con su observación",
+    rech8?.resultado === "RECHAZADA" && rech8?.observacion?.startsWith("La luminaria sigue") && rech8?.validada_por === opId
+      && evidenciaConservada.status === 200,
+    JSON.stringify({ resultado: rech8?.resultado, evidencia: evidenciaConservada.status }));
+  const audRech = await ultimaAuditoria(8, "RECHAZA_RESOLUCION");
+  caso("Se audita RECHAZA_RESOLUCION con la observación", audRech?.detalle?.observacion?.startsWith("La luminaria sigue"), JSON.stringify(audRech?.detalle));
+  r = await validar(op, 8, { resultado: "CONFIRMADA" });
+  caso("Sin una resolución pendiente no hay nada que validar (409)", r.status === 409 && r.data?.error === "SIN_RESOLUCION_PENDIENTE", r.data?.message);
   r = await alta(op, { ...datos, geom: alNorte(base, 2000), photoHash: hashFoto("d"), gpsAccuracy: 10 });
   caso("Un operador no registra incidentes", r.status === 403 && r.data?.error === "SIN_PERMISO", `HTTP ${r.status}`);
-  r = await llamar(op, "PATCH", `/api/incidents/${incId}`, { action: "resolve", observacion: "Bacheo verificado en el lugar." });
-  caso("El operador registra el cierre: pasa a Resuelto", r.status === 200 && r.data?.data?.status === "resolved", `HTTP ${r.status}`);
-  const res = (await db.query("SELECT informada_por, validada_por, resultado, fecha_validacion FROM resolucion WHERE incidente_id = $1", [incId])).rows[0];
-  caso("El cierre registra quién lo validó y cuándo", res?.resultado === "CONFIRMADA" && !!res?.validada_por && !!res?.fecha_validacion, JSON.stringify({ validadaPor: res?.validada_por, resultado: res?.resultado }));
+  r = await informar(op, incId, { hash: hashFoto("oficial-incId") });
+  const informado = r.status === 201;
+  r = await llamar(op, "POST", `/api/incidents/${incId}/resolucion/validar`, { resultado: "CONFIRMADA", observacion: "Bacheo verificado en el lugar." });
+  caso("El operador informa la información oficial y valida: pasa a Resuelto", informado && r.status === 200 && r.data?.data?.status === "resolved", `HTTP ${r.status}`);
+  const res = (await db.query(
+    `SELECT r.informada_por, r.validada_por, r.resultado, r.fecha_validacion, i.fecha_cierre
+       FROM resolucion r JOIN incidente i USING (incidente_id) WHERE r.incidente_id = $1`, [incId]
+  )).rows[0];
+  caso("El cierre registra quién lo validó y cuándo", res?.resultado === "CONFIRMADA" && !!res?.validada_por && !!res?.fecha_validacion && !!res?.fecha_cierre, JSON.stringify({ validadaPor: res?.validada_por, resultado: res?.resultado }));
 
   // --- HU-07: auditoría ---
   r = await llamar(op, "GET", `/api/auditoria?incidente=${incId}`);
   const acciones = (r.data?.data ?? []).map((a: { accion: string }) => a.accion);
   caso("La auditoría del incidente está completa y en orden cronológico",
-    JSON.stringify(acciones) === JSON.stringify(["ALTA_INCIDENTE", "CONFIRMA_INCIDENTE", "CONFIRMA_INCIDENTE", "ACTIVA_INCIDENTE", "VALIDA_RESOLUCION"]),
+    JSON.stringify(acciones) === JSON.stringify(["ALTA_INCIDENTE", "CONFIRMA_INCIDENTE", "CONFIRMA_INCIDENTE", "ACTIVA_INCIDENTE", "INFORMA_RESOLUCION", "VALIDA_RESOLUCION"]),
     acciones.join(" → "));
   const ip = r.data?.data?.[0]?.direccion_ip;
   caso("Cada registro guarda la dirección IP", ip === "190.210.0.10", ip);

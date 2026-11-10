@@ -132,17 +132,6 @@ export default function DashboardPage() {
     setSelectedId(incident.id);
   }, []);
 
-  /** El operador registra el cierre de un incidente activo. */
-  const handleResolve = useCallback(async (incident: Incident) => {
-    if (!window.confirm(`¿Registrar como resuelto el incidente "${incident.category}" N.° ${incident.id}?`)) return;
-    const { res, data } = await api(`/api/incidents/${incident.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ action: "resolve", observacion: "Cierre validado por el operador." }),
-    });
-    if (res.ok) upsertIncident(data.data);
-    else window.alert(data?.message ?? "No se pudo registrar el cierre.");
-  }, [upsertIncident]);
-
   const seguirConectado = useCallback(() => {
     api("/api/auth/sesion");
   }, []);
@@ -205,7 +194,6 @@ export default function DashboardPage() {
             onNewReport={handleNewReport}
             usuario={usuario}
             onLogout={salir}
-            onResolve={usuario?.rol === "OPERADOR" ? handleResolve : undefined}
           />
         </aside>
 

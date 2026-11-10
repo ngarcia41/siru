@@ -413,34 +413,3 @@ export async function reclasificarIncidente(
     return { ok: true, datos: (await obtenerIncidente(incidenteId, c))! };
   });
 }
-
-export async function resolverIncidente(
-  operadorId: number,
-  incidenteId: number,
-  observacion: string | null,
-  ip: string | null
-): Promise<Resultado<Incident>> {
-  return transaccion(async (c) => {
-    const inc = (await c.query("SELECT estado FROM incidente WHERE incidente_id = $1 FOR UPDATE", [incidenteId])).rows[0];
-    if (!inc) return rechazo(404, "NO_ENCONTRADO", "Incidente no encontrado.");
-    if (!["ACTIVO", "EN_REVISION"].includes(inc.estado)) {
-      return rechazo(409, "ESTADO_NO_RESOLUBLE", "Solo se pueden cerrar incidentes activos o en revisión.");
-    }
-    const obs = observacion?.trim().slice(0, 300) || null;
-    await c.query(
-      `INSERT INTO resolucion (incidente_id, informada_por, observacion, validada_por, fecha_validacion, resultado)
-       VALUES ($1, $2, $3, $2, now(), 'CONFIRMADA')`,
-      [incidenteId, operadorId, obs]
-    );
-    // Fuera de ACTIVO el índice de prioridad queda en NULL (D-06). Esta acción se reemplaza en la T10 (D-18).
-    await c.query(
-      "UPDATE incidente SET estado = 'RESUELTO', fecha_cierre = now(), indice_prioridad = NULL WHERE incidente_id = $1",
-      [incidenteId]
-    );
-    await auditar("VALIDA_RESOLUCION", {
-      usuarioId: operadorId, incidenteId, ip,
-      detalle: { estadoAnterior: inc.estado, estadoNuevo: "RESUELTO", observacion: obs },
-    }, c);
-    return { ok: true, datos: (await obtenerIncidente(incidenteId, c))! };
-  });
-}

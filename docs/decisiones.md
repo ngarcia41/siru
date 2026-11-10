@@ -138,7 +138,7 @@ Si la foto no informa su desfase horario, la fecha de captura se interpreta en l
 `npm run prueba` recrea `siru_prueba`, levanta el servidor contra esa base, corre las pruebas y lo apaga. Se niega a
 correr si la base de destino no es `siru_prueba`. Impacto en el documento: ninguno.
 
-### D-18 · Fin del cierre directo del Sprint 2 (Implementación · Aprobada el 09/11/2026 · Sprint 3)
+### D-18 · Fin del cierre directo del Sprint 2 (Implementación · Implementada el 09/11/2026 en la T10 · Sprint 3)
 La acción `resolve` del Sprint 2, en la que el operador cierra sin evidencia, se reemplaza por el circuito de HU-05.
 Las dos pruebas del cierre se adaptan al nuevo circuito sin perder lo que verifican: quién validó y cuándo.
 

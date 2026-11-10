@@ -4,15 +4,12 @@
  *   GET   /api/incidents/:id  → un incidente
  *   PATCH /api/incidents/:id  → solo operador:
  *     { action: "reclasificar", severidad?, categoria? }  (HU-04, D-13; severidad: low | medium | high)
- *     { action: "resolve", observacion? }  cierre directo del Sprint 2, se reemplaza en la T10 (D-18)
- *
- * El cierre queda registrado en RESOLUCION (quién lo validó y cuándo) y en la
- * auditoría. El informe del vecino con evidencia fotográfica se agrega en el
- * Sprint 3 (HU-05).
+ *   El cierre directo del Sprint 2 (action "resolve") se eliminó: un incidente se cierra validando una
+ *   resolución con evidencia (POST /api/incidents/:id/resolucion/validar, D-18).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requerirSesion } from "@/lib/servidor/sesion";
-import { obtenerIncidente, reclasificarIncidente, resolverIncidente } from "@/lib/servidor/incidentes";
+import { obtenerIncidente, reclasificarIncidente } from "@/lib/servidor/incidentes";
 import { error, ipDe, leerJson } from "@/lib/servidor/http";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const id = idValido(params.id);
   if (!id) return error(404, "NO_ENCONTRADO", "Incidente no encontrado.");
 
-  const body = await leerJson<{ action?: string; observacion?: string; severidad?: unknown; categoria?: unknown }>(req);
+  const body = await leerJson<{ action?: string; severidad?: unknown; categoria?: unknown }>(req);
 
   if (body?.action === "reclasificar") {
     try {
@@ -49,14 +46,5 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  if (body?.action !== "resolve") return error(400, "ACCION_INVALIDA", "Acción no reconocida.");
-
-  try {
-    const r = await resolverIncidente(s.usuario.id, id, body.observacion ?? null, ipDe(req));
-    if (!r.ok) return error(r.status, r.codigo, r.mensaje);
-    return NextResponse.json({ success: true, data: r.datos });
-  } catch (e) {
-    console.error("[SIRU API] Error al resolver:", e);
-    return error(500, "ERROR_INTERNO", "No se pudo registrar el cierre.");
-  }
+  return error(400, "ACCION_INVALIDA", "Acción no reconocida.");
 }

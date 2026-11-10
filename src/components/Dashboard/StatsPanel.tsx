@@ -27,7 +27,6 @@ interface StatsPanelProps {
   usuario: SesionCliente | null;
   onLogout: () => void;
   /** Solo para operadores: registra el cierre de un incidente activo o en revisión. */
-  onResolve?: (incident: Incident) => void;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -78,7 +77,6 @@ export default function StatsPanel({
   onNewReport,
   usuario,
   onLogout,
-  onResolve,
 }: StatsPanelProps) {
   const [filter, setFilter] = useState<IncidentStatus | "all">("all");
   const [activeTab, setActiveTab] = useState<"list" | "analytics">("list");
@@ -232,7 +230,6 @@ export default function StatsPanel({
                   incident={incident}
                   isSelected={incident.id === selectedId}
                   onClick={() => onSelectIncident(incident)}
-                  onResolve={onResolve}
                 />
               ))
             )}
@@ -329,14 +326,12 @@ function StatCard({
 }
 
 function IncidentCard({
-  incident, isSelected, onClick, onResolve,
+  incident, isSelected, onClick,
 }: {
   incident: Incident;
   isSelected: boolean;
   onClick: () => void;
-  onResolve?: (incident: Incident) => void;
 }) {
-  const resoluble = !!onResolve && (incident.status === "active" || incident.status === "review");
   const statusColor =
     incident.status === "active"
       ? "#22c55e"
@@ -403,11 +398,6 @@ function IncidentCard({
         />
       </div>
     </button>
-    {resoluble && (
-      <button type="button" className={styles.resolveBtn} onClick={() => onResolve!(incident)}>
-        ✓ Registrar cierre
-      </button>
-    )}
     </div>
   );
 }
