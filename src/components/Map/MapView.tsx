@@ -325,16 +325,25 @@ export default function MapView({
 
     if (heatPoints.length === 0) return;
 
-    // leaflet.heat se carga dinámicamente
-    import("leaflet").then(async (L) => {
+    // Si la capa se apaga o cambian los incidentes antes de que termine la carga, no se dibuja.
+    let cancelado = false;
+
+    // leaflet.heat se carga dinámicamente. Es un script clásico, no un módulo: no
+    // exporta nada y se registra escribiendo L.heatLayer sobre una variable global
+    // L. Dentro del bundle de Next esa variable no existe, así que antes de cargarlo
+    // se publica en window.L el mismo objeto de Leaflet que usa el mapa.
+    import("leaflet").then(async (modulo) => {
       if (!mapRef.current) return;
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { default: heatModule } = await import("leaflet.heat") as any;
-        if (heatModule) heatModule(L);
-
+        const L = ((modulo as any).default ?? modulo) as any;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const heatLayer = (L as any).heatLayer(heatPoints, {
+        (window as any).L = L;
+        await import("leaflet.heat");
+        if (cancelado || !mapRef.current) return;
+        if (typeof L.heatLayer !== "function") throw new Error("leaflet.heat no registró heatLayer");
+
+        const heatLayer = L.heatLayer(heatPoints, {
           radius: 40,
           blur: 25,
           maxZoom: 16,
@@ -348,11 +357,14 @@ export default function MapView({
 
         heatLayer.addTo(mapRef.current);
         heatLayerRef.current = heatLayer;
-      } catch {
-        // leaflet.heat podría no estar disponible; el mapa funciona sin él
-        console.warn("[SIRU] leaflet.heat no disponible. Heatmap deshabilitado.");
+      } catch (e) {
+        // El mapa sigue funcionando sin la capa de calor, pero el error queda a la vista.
+        console.error("[SIRU] No se pudo dibujar el mapa de calor:", e);
       }
     });
+    return () => {
+      cancelado = true;
+    };
   }, [showHeatmap, incidents]);
 
   // -----------------------------------------------------------------------
