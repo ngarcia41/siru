@@ -552,3 +552,104 @@
   cursor: pointer;
 }
 .resolveBtn:hover { background: rgba(34, 197, 94, 0.2); }
+.resolveBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Acciones sobre el incidente seleccionado (T12) ── */
+.acciones {
+  display: grid;
+  gap: 8px;
+  padding: 8px 2px 4px;
+}
+.accionFila {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.accionNeutra,
+.accionPeligro {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.accionNeutra {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+.accionNeutra:hover:not(:disabled) { background: var(--color-bg-card); }
+.accionPeligro {
+  border: 1px solid var(--color-error-border);
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+}
+.accionPeligro:hover:not(:disabled) { background: rgba(239, 68, 68, 0.2); }
+.accionNeutra:disabled,
+.accionPeligro:disabled { opacity: 0.5; cursor: not-allowed; }
+.accionForm {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+}
+.accionEtiqueta {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.accionEtiqueta select,
+.accionEtiqueta textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  resize: vertical;
+}
+.accionError,
+.accionAviso {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+.accionError { color: var(--color-error-text); background: var(--color-error-bg); border: 1px solid var(--color-error-border); }
+.accionAviso { color: var(--color-success-text); background: var(--color-success-bg); }
+.evidencia {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-md);
+  background: rgba(59, 130, 246, 0.06);
+}
+.evidenciaTitulo {
+  font-size: 12px;
+  font-weight: 700;
+  color: #93c5fd;
+}
+.evidenciaImg {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-tertiary);
+}
+.evidenciaPdf {
+  font-size: 13px;
+  color: #93c5fd;
+}
+.evidenciaDato {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}

@@ -53,6 +53,10 @@ function getMarkerColor(incident: Incident): { fill: string; opacity: number; bo
   if (incident.status === "resolved") {
     return { fill: "#6b7280", opacity: 0.7, border: "#9ca3af" };
   }
+  if (incident.status === "review") {
+    // Resolución informada, pendiente de que el operador la valide (HU-05)
+    return { fill: "#3b82f6", opacity: 0.9, border: "#93c5fd" };
+  }
   if (incident.status === "unverified") {
     // Marcador translúcido para incidentes sin verificar (TFG §6.2)
     return { fill: "#94a3b8", opacity: 0.45, border: "#cbd5e1" };

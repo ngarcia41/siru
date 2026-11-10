@@ -5,7 +5,9 @@
  * Muestra:
  *   - Contadores por estado (Sin Verificar / Activos / Resueltos)
  *   - Distribución por categoría
- *   - Lista de incidentes con filtros
+ *   - Lista de incidentes con filtros, ordenada por prioridad (HU-04)
+ *   - Acciones sobre el incidente seleccionado: informe de la resolución del
+ *     vecino y bandeja del operador (HU-05, T12)
  *   - Toggle de heatmap
  *
  * Objetivo TFG §7 — Módulo de Analítica para organizaciones vecinales.
@@ -15,6 +17,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { BandaPrioridad, Incident, IncidentStatus, SesionCliente } from "@/lib/types";
+import AccionesIncidente from "./AccionesIncidente";
 import styles from "./StatsPanel.module.css";
 
 interface StatsPanelProps {
@@ -26,7 +29,12 @@ interface StatsPanelProps {
   onNewReport: () => void;
   usuario: SesionCliente | null;
   onLogout: () => void;
-  /** Solo para operadores: registra el cierre de un incidente activo o en revisión. */
+  /** Abre el informe de la resolución (vecino) o la carga de información oficial (operador). */
+  onInformarResolucion: (incident: Incident) => void;
+  /** El incidente cambió (validado, rechazado o reclasificado). */
+  onIncidenteActualizado: (incident: Incident) => void;
+  /** El incidente se desestimó: sale del mapa y del panel. */
+  onIncidenteDesestimado: (incident: Incident) => void;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -77,6 +85,9 @@ export default function StatsPanel({
   onNewReport,
   usuario,
   onLogout,
+  onInformarResolucion,
+  onIncidenteActualizado,
+  onIncidenteDesestimado,
 }: StatsPanelProps) {
   const [filter, setFilter] = useState<IncidentStatus | "all">("all");
   const [activeTab, setActiveTab] = useState<"list" | "analytics">("list");
@@ -87,6 +98,7 @@ export default function StatsPanel({
     const active = incidents.filter((i) => i.status === "active").length;
     const unverified = incidents.filter((i) => i.status === "unverified").length;
     const resolved = incidents.filter((i) => i.status === "resolved").length;
+    const review = incidents.filter((i) => i.status === "review").length;
 
     // Por categoría
     const byCategory = incidents.reduce<Record<string, number>>((acc, i) => {
@@ -100,7 +112,7 @@ export default function StatsPanel({
     const medSeverity = activeIncidents.filter((i) => i.severity === "medium").length;
     const lowSeverity = activeIncidents.filter((i) => i.severity === "low").length;
 
-    return { total, active, unverified, resolved, byCategory, highSeverity, medSeverity, lowSeverity };
+    return { total, active, unverified, resolved, review, byCategory, highSeverity, medSeverity, lowSeverity };
   }, [incidents]);
 
   // Lista filtrada
@@ -218,6 +230,13 @@ export default function StatsPanel({
             >
               Sin verificar
             </button>
+            <button
+              className={`${styles.filterChip} ${filter === "review" ? styles.filterActive : ""}`}
+              onClick={() => setFilter("review")}
+              id="filtro-en-revision"
+            >
+              En revisión ({stats.review})
+            </button>
           </div>
 
           <div className={styles.list}>
@@ -225,12 +244,23 @@ export default function StatsPanel({
               <div className={styles.empty}>No hay incidentes en esta categoría.</div>
             ) : (
               filtered.map((incident) => (
-                <IncidentCard
-                  key={incident.id}
-                  incident={incident}
-                  isSelected={incident.id === selectedId}
-                  onClick={() => onSelectIncident(incident)}
-                />
+                <div key={incident.id}>
+                  <IncidentCard
+                    incident={incident}
+                    isSelected={incident.id === selectedId}
+                    onClick={() => onSelectIncident(incident)}
+                  />
+                  {/* Las acciones se muestran en el incidente abierto, para no recargar la lista. */}
+                  {incident.id === selectedId && usuario && (
+                    <AccionesIncidente
+                      incident={incident}
+                      rol={usuario.rol}
+                      onInformar={onInformarResolucion}
+                      onActualizado={onIncidenteActualizado}
+                      onDesestimado={onIncidenteDesestimado}
+                    />
+                  )}
+                </div>
               ))
             )}
           </div>
@@ -335,6 +365,8 @@ function IncidentCard({
   const statusColor =
     incident.status === "active"
       ? "#22c55e"
+      : incident.status === "review"
+      ? "#3b82f6"
       : incident.status === "resolved"
       ? "#6b7280"
       : "#94a3b8";

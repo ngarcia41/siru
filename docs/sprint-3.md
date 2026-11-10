@@ -41,12 +41,12 @@ para que el cierre quede registrado de forma confiable.
 | HU-05 | T04 | Recodificar en el servidor, guardar la foto privada y la miniatura de 480 px, y servirlas por una ruta autenticada (B-03, D-14); fecha EXIF futura (D-23) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-04 | T05 | Calcular el índice de prioridad al activar y con cada confirmación (D-06) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-04 | T06 | Tarea diaria de las 00:30 que recalcula los índices (D-07) | Alta | 0,5 día | Hecha (09/11/2026) |
-| HU-04 | T07 | Reclasificar la severidad y la categoría (operador), con recálculo y auditoría (D-13) (API; los botones van en la T12) | Alta | 1 día | Hecha (09/11/2026) |
+| HU-04 | T07 | Reclasificar la severidad y la categoría (operador), con recálculo y auditoría (D-13) (los botones se agregaron en la T12) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-04 | T08 | Panel ordenado por índice con su banda; mapa de calor de los activos ponderado por el índice | Alta | 1 día | Hecha (09/11/2026) |
 | HU-05 | T09 | Informe de la resolución por el vecino (a menos de 50 m, con foto) y por el operador (información oficial) (D-10, D-11) | Alta | 1,5 días | Hecha (09/11/2026) |
 | HU-05 | T10 | Validar o rechazar la resolución (observación obligatoria al rechazar) (D-18) | Alta | 1 día | Hecha (09/11/2026) |
 | HU-05 | T11 | Desestimar con observación obligatoria y suspender tras 3 desestimados en 30 días (D-09, D-12) | Alta | 1 día | Hecha (09/11/2026) |
-| HU-05 | T12 | Pantallas: informar la resolución (vecino) y bandeja del operador con la evidencia y las acciones | Alta | 1,5 días | Pendiente |
+| HU-05 | T12 | Pantallas: informar la resolución (vecino) y bandeja del operador con la evidencia y las acciones; incluye los botones de reclasificar de la T07 y la cámara en el informe (D-22) | Alta | 1,5 días | Hecha (09/11/2026) |
 | Técnica | T13 | Pruebas de HU-04 y HU-05, y adecuación de las 42 pruebas anteriores | Alta | 1 día | Pendiente |
 | Técnica | T14 | Semilla con imágenes e índices, README y cierre del sprint | Media | 0,5 día | Pendiente |
 | HU-02 | T15 | Verificar el duplicado por cercanía al elegir la categoría (paso 2), sin crear nada, y color de éxito en "Confirmación registrada" (D-24) | Media | 0,5 día | Hecha (09/11/2026) |

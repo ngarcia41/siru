@@ -5,7 +5,9 @@
  * Desde el Sprint 2:
  *   - Exige sesión (middleware + validación de la API).
  *   - Los incidentes se leen de PostgreSQL con PostGIS (GET /api/incidents).
- *   - El vecino reporta y confirma; el operador registra el cierre.
+ *   - El vecino reporta y confirma.
+ * Desde el Sprint 3 (HU-05): el vecino informa la resolución; el operador la
+ * valida o la rechaza, carga información oficial, reclasifica y desestima.
  *   - Aviso 2 minutos antes de que la sesión venza por inactividad.
  */
 "use client";
@@ -18,6 +20,7 @@ import { api, EVENTO_ACTIVIDAD } from "@/lib/cliente/api";
 import { AVISO_EXPIRACION_MINUTOS } from "@/lib/reglas";
 import StatsPanel from "@/components/Dashboard/StatsPanel";
 import ReportForm from "@/components/ReportForm/ReportForm";
+import ResolucionForm from "@/components/ResolucionForm/ResolucionForm";
 import styles from "./dashboard.module.css";
 
 // Carga dinámica del mapa — evita SSR de Leaflet (requiere window)
@@ -42,6 +45,8 @@ export default function DashboardPage() {
 
   // Estado de UI
   const [showReportForm, setShowReportForm] = useState(false);
+  /** Incidente sobre el que se informa la resolución (vecino) o la información oficial (operador). */
+  const [resolucionDe, setResolucionDe] = useState<Incident | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [userLocation, setUserLocation] = useState<GeoPoint | null>(null);
   const [mobileView, setMobileView] = useState<"map" | "panel">("map");
@@ -132,6 +137,12 @@ export default function DashboardPage() {
     setSelectedId(incident.id);
   }, []);
 
+  /** Un incidente desestimado sale del mapa y del panel, igual que en GET /api/incidents. */
+  const quitarIncidente = useCallback((incident: Incident) => {
+    setIncidents((prev) => prev.filter((x) => x.id !== incident.id));
+    setSelectedId(null);
+  }, []);
+
   const seguirConectado = useCallback(() => {
     api("/api/auth/sesion");
   }, []);
@@ -194,6 +205,9 @@ export default function DashboardPage() {
             onNewReport={handleNewReport}
             usuario={usuario}
             onLogout={salir}
+            onInformarResolucion={setResolucionDe}
+            onIncidenteActualizado={upsertIncident}
+            onIncidenteDesestimado={quitarIncidente}
           />
         </aside>
 
@@ -244,6 +258,10 @@ export default function DashboardPage() {
               Sin verificar (&lt;3 pts)
             </div>
             <div className={styles.legendItem}>
+              <span className={styles.legendDot} style={{ background: "#3b82f6" }} />
+              En revisión
+            </div>
+            <div className={styles.legendItem}>
               <span className={styles.legendDot} style={{ background: "#6b7280" }} />
               Resuelto
             </div>
@@ -289,6 +307,19 @@ export default function DashboardPage() {
           isOpen={showReportForm}
           onClose={() => setShowReportForm(false)}
           onSuccess={upsertIncident}
+        />
+      )}
+
+      {/* Informe de la resolución (HU-05, T12) */}
+      {resolucionDe && usuario && (
+        <ResolucionForm
+          incident={resolucionDe}
+          rol={usuario.rol}
+          onClose={() => setResolucionDe(null)}
+          onListo={(incident) => {
+            upsertIncident(incident);
+            setResolucionDe(null);
+          }}
         />
       )}
     </div>

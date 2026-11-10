@@ -1,6 +1,7 @@
 /**
  * SIRU — app/api/incidents/[id]/resolucion/route.ts
  *
+ *   GET  /api/incidents/:id/resolucion   → la resolución pendiente, para la bandeja del operador (T12)
  *   POST /api/incidents/:id/resolucion   (multipart/form-data)  → vecino u operador (HU-05, D-10)
  *
  * Vecino: foto (JPEG reducido en el teléfono), hashOriginal, lat, lng,
@@ -15,13 +16,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { requerirSesion } from "@/lib/servidor/sesion";
 import { error, ipDe, leerFormulario, numeroDe, textoDe } from "@/lib/servidor/http";
 import { validarImagenSubida } from "@/lib/servidor/imagen";
-import { esFirmaPdf, informarResolucion, type Evidencia } from "@/lib/servidor/resoluciones";
+import { esFirmaPdf, informarResolucion, obtenerResolucionPendiente, type Evidencia } from "@/lib/servidor/resoluciones";
 import { EVIDENCIA, IMAGEN } from "@/lib/reglas";
 
 export const dynamic = "force-dynamic";
 
 /** Margen para los campos de texto y los separadores del multipart, además del PDF. */
 const MARGEN_FORMULARIO_BYTES = 64 * 1024;
+
+/** GET: la resolución pendiente de un incidente en revisión, para la bandeja del operador (T12). */
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const s = await requerirSesion(req, { roles: ["OPERADOR"] });
+  if (!s.ok) return s.respuesta;
+  const id = /^\d{1,9}$/.test(params.id) ? Number(params.id) : null;
+  const resolucion = id ? await obtenerResolucionPendiente(id) : null;
+  if (!resolucion) return error(404, "SIN_RESOLUCION_PENDIENTE", "El incidente no tiene una resolución pendiente.");
+  return NextResponse.json({ success: true, data: resolucion });
+}
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const s = await requerirSesion(req, { roles: ["VECINO", "OPERADOR"] });

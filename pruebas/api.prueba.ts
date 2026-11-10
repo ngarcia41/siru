@@ -447,6 +447,18 @@ async function main() {
   const validar = (s: Sesion, id: unknown, cuerpo: Record<string, unknown>) =>
     llamar(s, "POST", `/api/incidents/${id}/resolucion/validar`, cuerpo);
   const opId = (await db.query("SELECT usuario_id FROM usuario WHERE email = 'operador@siru.local'")).rows[0].usuario_id;
+  // T12: datos de la bandeja "En revisión" (quién informó, cuándo, a qué distancia y la evidencia).
+  r = await llamar(op, "GET", "/api/incidents/5/resolucion");
+  const bandeja = r.data?.data;
+  caso("La bandeja del operador muestra quién informó, cuándo, a qué distancia y la miniatura de la evidencia",
+    r.status === 200 && bandeja?.informadaPor === "vecino2@siru.local" && bandeja?.perfil === "VECINO"
+      && Math.round(bandeja?.distanciaMetros) === 30 && !!bandeja?.fechaInforme
+      && bandeja?.miniaturaUrl === `/api/imagenes/miniaturas/${hashRes5}.jpg` && bandeja?.tipoEvidencia === "foto",
+    JSON.stringify({ informo: bandeja?.informadaPor, distancia: bandeja?.distanciaMetros }));
+  const bandejaVecino = await llamar(v1, "GET", "/api/incidents/5/resolucion");
+  const sinPendiente = await llamar(op, "GET", "/api/incidents/1/resolucion");
+  caso("Un vecino no ve la bandeja (403) y un incidente sin informe pendiente responde 404",
+    bandejaVecino.status === 403 && sinPendiente.status === 404, `${bandejaVecino.status}, ${sinPendiente.status}`);
   r = await validar(op, 5, { resultado: "TAL_VEZ" });
   caso("Un resultado distinto de CONFIRMADA o RECHAZADA se rechaza (400)", r.status === 400 && r.data?.error === "RESULTADO_INVALIDO", r.data?.message);
   r = await validar(op, 5, { resultado: "CONFIRMADA" });

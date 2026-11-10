@@ -11,9 +11,9 @@
  */
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
-import { transaccion } from "./db";
+import { pool, transaccion } from "./db";
 import { auditar } from "./auditoria";
-import { almacenamiento, claveDocumento, claveFoto, claveMiniatura } from "./almacenamiento";
+import { almacenamiento, claveDocumento, claveFoto, claveMiniatura, miniaturaDe } from "./almacenamiento";
 import { validarExif, type ExifDeclarado } from "./imagen";
 import { obtenerIncidente, punto, rechazo, validarPrecision, type Resultado } from "./incidentes";
 import { DESESTIMADOS_PARA_SUSPENSION, DIAS_VENTANA_SUSPENSION, OBSERVACION, RADIO_METROS } from "../reglas";
@@ -278,4 +278,54 @@ export async function desestimarIncidente(
     const cuentaSuspendida = await controlarSuspension(c, inc.usuario_id, incidenteId, operadorId, ip);
     return { ok: true, datos: { incidente: (await obtenerIncidente(incidenteId, c))!, cuentaSuspendida } };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Bandeja del operador (T12)
+// ---------------------------------------------------------------------------
+
+export interface ResolucionPendiente {
+  resolucionId: number;
+  perfil: PerfilInformante;
+  informadaPor: string;
+  fechaInforme: string;
+  /** Distancia del vecino al incidente al informar (la del operador no se controla: null). */
+  distanciaMetros: number | null;
+  tipoEvidencia: "foto" | "pdf";
+  miniaturaUrl: string | null;
+  fotoUrl: string | null;
+  documentoUrl: string | null;
+}
+
+/**
+ * Lo que el operador necesita para validar: quién informó, cuándo, a qué
+ * distancia y la evidencia. La distancia no tiene columna propia en RESOLUCION:
+ * se toma del detalle de la auditoría INFORMA_RESOLUCION de esa resolución.
+ */
+export async function obtenerResolucionPendiente(incidenteId: number): Promise<ResolucionPendiente | null> {
+  const { rows } = await pool.query(
+    `SELECT r.resolucion_id, r.fecha_informe, r.evidencia_ruta, u.email, u.rol,
+            (SELECT (a.detalle->>'distanciaMetros')::numeric FROM auditoria a
+              WHERE a.accion = 'INFORMA_RESOLUCION' AND a.incidente_id = r.incidente_id
+                AND (a.detalle->>'resolucionId')::int = r.resolucion_id
+              ORDER BY a.auditoria_id DESC LIMIT 1) AS distancia
+       FROM resolucion r JOIN usuario u ON u.usuario_id = r.informada_por
+      WHERE r.incidente_id = $1 AND r.resultado = 'PENDIENTE'
+      ORDER BY r.fecha_informe DESC LIMIT 1`,
+    [incidenteId]
+  );
+  const f = rows[0];
+  if (!f) return null;
+  const esPdf = String(f.evidencia_ruta).startsWith("documentos/");
+  return {
+    resolucionId: f.resolucion_id,
+    perfil: f.rol,
+    informadaPor: f.email,
+    fechaInforme: new Date(f.fecha_informe).toISOString(),
+    distanciaMetros: f.distancia === null ? null : Number(f.distancia),
+    tipoEvidencia: esPdf ? "pdf" : "foto",
+    miniaturaUrl: esPdf ? null : `/api/imagenes/${miniaturaDe(f.evidencia_ruta)}`,
+    fotoUrl: esPdf ? null : `/api/imagenes/${f.evidencia_ruta}`,
+    documentoUrl: esPdf ? `/api/imagenes/${f.evidencia_ruta}` : null,
+  };
 }
